@@ -1,27 +1,10 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../db';
-import { Task, TaskStatus, User, Sector, Criticality, TaskType, MenuKey, TaskHistory, VisibilityScope } from '../types';
+import { Task, TaskStatus, User, Sector, Criticality, TaskType, MenuKey, TaskHistory, VisibilityScope, EntryMethod } from '../types';
 import { 
-  Search, 
-  Play, 
-  CheckCircle, 
-  AlertCircle, 
-  AlertTriangle,
-  Eye, 
-  RotateCcw,
-  PlusCircle,
-  X,
-  Pause,
-  Loader2,
-  Edit2,
-  Clock,
-  ArrowRight,
-  User as UserIcon,
-  Calendar,
-  MessageSquare,
-  Tag
+  Search, Play, CheckCircle, RotateCcw, PlusCircle, X, Pause, Loader2, Edit2, Clock, User as UserIcon, MessageSquare, Tag, ChevronLeft, ChevronRight, Filter, AlertTriangle, Calendar, Hash, Flag, Zap, Workflow, Info, CornerDownRight, LogIn
 } from 'lucide-react';
 
 interface TaskListProps {
@@ -29,137 +12,179 @@ interface TaskListProps {
   user: User;
 }
 
-const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
-  const [searchParams] = useSearchParams();
+const ITEMS_PER_PAGE = 15;
+
+const TaskList: React.FC<TaskListProps> = ({ user }) => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState(searchParams.get('filter') || 'all');
-  const [search, setSearch] = useState('');
+  
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all');
+  const [searchTerm, setSearchTerm] = useState(searchParams.get('q') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
   
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(Number(searchParams.get('page')) || 1);
   const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [criticalities, setCriticalities] = useState<Criticality[]>([]);
   const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
+  const [entryMethods, setEntryMethods] = useState<EntryMethod[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const getTodayISO = () => new Date().toISOString().split('T')[0];
 
-  const fetchData = async () => {
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const fetchMetadata = async () => {
+      try {
+        const userCos = user.company_ids || [user.company_id];
+        const cosFilter = userCos.join(',');
+        const orFilter = `company_id.in.(${cosFilter}),company_ids.ov.{${cosFilter}}`;
+
+        const [s, u, sec, crit, tt, em] = await Promise.all([
+          supabase.from('statuses').select('*').or(orFilter).order('order', { ascending: true }),
+          supabase.from('users').select('*').in('company_id', userCos),
+          supabase.from('sectors').select('*').or(orFilter),
+          supabase.from('criticalities').select('*').or(orFilter),
+          supabase.from('task_types').select('*').or(orFilter),
+          supabase.from('entry_methods').select('*').or(orFilter)
+        ]);
+        setStatuses(s.data || []);
+        setUsers(u.data || []);
+        setSectors(sec.data || []);
+        setCriticalities(crit.data || []);
+        setTaskTypes(tt.data || []);
+        setEntryMethods(em.data || []);
+      } catch (err) {
+        console.error("Erro ao carregar metadados:", err);
+      }
+    };
+    fetchMetadata();
+  }, [user]);
+
+  const fetchTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const userCos = user.companyIds && user.companyIds.length > 0 ? user.companyIds : [user.companyId];
+      const userCos = user.company_ids || [user.company_id];
+      const today = getTodayISO();
       
-      const [t, s, u, sec, crit, tt] = await Promise.all([
-        supabase.from('tasks').select('*').in('companyId', userCos).order('createdAt', { ascending: false }),
-        supabase.from('statuses').select('*').or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`).order('order', { ascending: true }),
-        supabase.from('users').select('*').in('companyId', userCos),
-        supabase.from('sectors').select('*').or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`),
-        supabase.from('criticalities').select('*').or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`),
-        supabase.from('task_types').select('*').or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`)
-      ]);
-      setTasks(t.data || []);
-      setStatuses(s.data || []);
-      setUsers(u.data || []);
-      setSectors(sec.data || []);
-      setCriticalities(crit.data || []);
-      setTaskTypes(tt.data || []);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
-  };
+      let query = supabase.from('tasks').select('*', { count: 'exact' }).in('company_id', userCos).order('created_at', { ascending: false });
 
-  useEffect(() => { fetchData(); }, [user.companyId, user.companyIds]);
+      if (user.visibility_scope === VisibilityScope.OWN) query = query.eq('responsible_id', user.id);
+      
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'st-delayed') {
+          const finalIds = statuses.filter(s => s.isFinal).map(s => s.id);
+          query = query.lt('deadline', today);
+          if (finalIds.length > 0) query = query.not('status_id', 'in', `(${finalIds.join(',')})`);
+        } else if (statusFilter === 'today') {
+          const finalIds = statuses.filter(s => s.isFinal).map(s => s.id);
+          query = query.eq('deadline', today);
+          if (finalIds.length > 0) query = query.not('status_id', 'in', `(${finalIds.join(',')})`);
+        } else {
+          query = query.eq('status_id', statusFilter);
+        }
+      }
+
+      if (debouncedSearch) {
+        query = query.or(`title.ilike.%${debouncedSearch}%,solicitor.ilike.%${debouncedSearch}%`);
+      }
+
+      const from = (currentPage - 1) * ITEMS_PER_PAGE;
+      const { data, count, error } = await query.range(from, from + ITEMS_PER_PAGE - 1);
+      
+      if (error) throw error;
+      setTasks(data || []);
+      setTotalCount(count || 0);
+      setSearchParams({ status: statusFilter, q: debouncedSearch, page: String(currentPage) });
+    } catch (err) { 
+      console.error(err); 
+    } finally { 
+      setLoading(false); 
+    }
+  }, [user, statusFilter, debouncedSearch, currentPage, statuses, setSearchParams]);
+
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   useEffect(() => {
     const fetchHistory = async () => {
       if (!selectedTask) return;
       setHistoryLoading(true);
-      const { data } = await supabase.from('task_history').select('*').eq('taskId', selectedTask.id).order('timestamp', { ascending: false });
+      const { data } = await supabase.from('task_history').select('*').eq('task_id', selectedTask.id).order('timestamp', { ascending: false });
       setTaskHistory(data || []);
       setHistoryLoading(false);
     };
     fetchHistory();
   }, [selectedTask]);
 
-  const filteredTasks = useMemo(() => {
-    let result = [...tasks];
-    if (user.visibilityScope === VisibilityScope.OWN) result = result.filter(t => t.responsibleId === user.id);
-    else if (user.visibilityScope === VisibilityScope.SECTOR) {
-      const allowedSectors = user.visibleSectorIds || [];
-      result = result.filter(t => allowedSectors.includes(t.sectorId) || t.responsibleId === user.id);
-    }
-    const todayISO = getTodayISO();
-    const finishedIds = statuses.filter(s => s.isFinal).map(s => s.id);
-    
-    if (filter === 'all') { /* noop */ }
-    else if (filter === 'st-delayed') result = result.filter(t => (t.deadline.split('T')[0] < todayISO && !finishedIds.includes(t.statusId)));
-    else if (filter === 'today') result = result.filter(t => (t.deadline.split('T')[0] === todayISO && !finishedIds.includes(t.statusId)));
-    else result = result.filter(t => t.statusId === filter);
-    
-    if (search) {
-      const s = search.toLowerCase();
-      result = result.filter(t => t.title.toLowerCase().includes(s) || t.solicitor?.toLowerCase().includes(s));
-    }
-    return result;
-  }, [tasks, filter, search, statuses, user]);
-
   const updateTaskStatus = async (taskId: string, newStatusId: string) => {
     setActionLoading(taskId);
     const now = new Date().toISOString();
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    const oldStatusId = task.statusId;
+    const oldStatusId = task.status_id;
     const isFinal = statuses.find(s => s.id === newStatusId)?.isFinal;
     try {
-      const { error } = await supabase.from('tasks').update({ statusId: newStatusId, finishedAt: isFinal ? now : null }).eq('id', taskId);
+      const { error } = await supabase.from('tasks').update({ 
+        status_id: newStatusId, 
+        finished_at: isFinal ? now : null,
+        started_at: statuses.find(s => s.id === newStatusId)?.order === 2 ? (task.started_at || now) : task.started_at
+      }).eq('id', taskId);
+      
       if (!error) {
-        await supabase.from('task_history').insert([{ taskId, oldStatusId, newStatusId, changedById: user.id, timestamp: now }]);
-        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, statusId: newStatusId, finishedAt: isFinal ? now : null } : t));
-        if (selectedTask?.id === taskId) setSelectedTask(prev => prev ? { ...prev, statusId: newStatusId } : null);
+        await supabase.from('task_history').insert([{ 
+          task_id: taskId, 
+          old_status_id: oldStatusId, 
+          new_status_id: newStatusId, 
+          changed_by_id: user.id, 
+          timestamp: now 
+        }]);
+        fetchTasks();
+        if (selectedTask?.id === taskId) setSelectedTask(prev => prev ? { ...prev, status_id: newStatusId } : null);
       }
     } catch (err) { console.error(err); } finally { setActionLoading(null); }
   };
 
   const getStatusBadge = (task: Task) => {
-    const status = statuses.find(s => s.id === task.statusId);
-    const deadlineISO = task.deadline.split('T')[0];
-    const todayISO = getTodayISO();
+    const status = statuses.find(s => s.id === task.status_id);
+    const today = getTodayISO();
     const isFinished = status?.isFinal;
-    const isToday = deadlineISO === todayISO;
-    const isDelayed = deadlineISO < todayISO && !isFinished;
+    const isDelayed = task.deadline.split('T')[0] < today && !isFinished;
+    const isToday = task.deadline.split('T')[0] === today && !isFinished;
 
     if (isFinished) return <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase rounded-full border border-emerald-200">Concluída</span>;
-    if (isDelayed) return <span className="px-3 py-1 bg-rose-100 text-rose-700 text-[10px] font-black uppercase rounded-full border border-rose-200">Fora do SLA</span>;
-    if (isToday) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full animate-pulse shadow-lg shadow-brand/30">Vence Hoje</span>;
-
-    if (status?.order === 1) return <span className="px-3 py-1 bg-orange-100 text-orange-700 text-[10px] font-black uppercase rounded-full border border-orange-200">{status.name}</span>;
-    if (status?.order === 2) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full">{status.name}</span>;
-    if (status?.order === 3) return <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase rounded-full border border-amber-200">{status.name}</span>;
+    if (isDelayed) return <span className="px-3 py-1 bg-rose-100 text-rose-700 text-[10px] font-black uppercase rounded-full border border-rose-200 animate-pulse">Fora do SLA</span>;
+    if (status?.order === 2) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full shadow-sm">Em Execução</span>;
+    if (status?.order === 3) return <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase rounded-full border border-amber-200">Pausada</span>;
+    if (isToday) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full shadow-lg shadow-brand/30">Vence Hoje</span>;
     
     return <span className="px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-black uppercase rounded-full border border-slate-200">{status?.name || 'Pendente'}</span>;
   };
 
   const renderActionButtons = (task: Task, isModal = false) => {
-    // Filtra status que o ID da empresa da tarefa faz parte da lista companyIds
-    const companyStatuses = statuses.filter(s => s.companyIds?.includes(task.companyId) || s.companyId === task.companyId);
-    const currentStatus = companyStatuses.find(s => s.id === task.statusId);
-    
-    // Mapeia por ordem nos status vinculados
-    const openStatus = companyStatuses.find(s => s.order === 1);
-    const runningStatus = companyStatuses.find(s => s.order === 2);
-    const pausedStatus = companyStatuses.find(s => s.order === 3);
-    const finalStatus = companyStatuses.find(s => s.isFinal);
+    const currentStatus = statuses.find(s => s.id === task.status_id);
+    const openStatus = statuses.find(s => s.order === 1);
+    const runningStatus = statuses.find(s => s.order === 2);
+    const pausedStatus = statuses.find(s => s.order === 3);
+    const finalStatus = statuses.find(s => s.isFinal);
 
     if (actionLoading === task.id) return <Loader2 size={18} className="animate-spin text-brand mx-auto" />;
 
     if (currentStatus?.isFinal) {
       return (
-        <button onClick={(e) => { e.stopPropagation(); if (openStatus) updateTaskStatus(task.id, openStatus.id); }} className={`flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest transition-all ${isModal ? 'flex-1 py-4 bg-brand text-white rounded-2xl' : 'px-4 py-2 bg-white text-brand border border-slate-100 rounded-xl hover:bg-brand hover:text-white'}`}>
-          <RotateCcw size={14} /> Reabrir
+        <button onClick={(e) => { e.stopPropagation(); if (openStatus) updateTaskStatus(task.id, openStatus.id); }} className={`flex items-center justify-center gap-2 font-black uppercase text-[10px] transition-all ${isModal ? 'flex-1 py-4 bg-brand text-white rounded-2xl' : 'px-4 py-2 bg-white text-brand border border-slate-100 rounded-xl hover:bg-brand hover:text-white'}`}>
+          <RotateCcw size={14} /> Reabrir Demanda
         </button>
       );
     }
@@ -167,19 +192,19 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
     return (
       <div className={`flex items-center gap-2 ${isModal ? 'w-full' : ''}`}>
         {(currentStatus?.order === 1 || currentStatus?.order === 3) && runningStatus && (
-          <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, runningStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-brand text-white rounded-xl shadow-lg shadow-brand/20 hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
+          <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, runningStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] bg-brand text-white rounded-xl shadow-lg shadow-brand/20 hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
             <Play size={14} fill="currentColor" /> Iniciar
           </button>
         )}
         {currentStatus?.order === 2 && (
           <>
             {pausedStatus && (
-              <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, pausedStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-amber-500 text-white rounded-xl hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
+              <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, pausedStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] bg-amber-500 text-white rounded-xl hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
                 <Pause size={14} fill="currentColor" /> Pausar
               </button>
             )}
             {finalStatus && (
-              <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, finalStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-emerald-600 text-white rounded-xl hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
+              <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, finalStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] bg-emerald-600 text-white rounded-xl hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
                 <CheckCircle size={14} /> Concluir
               </button>
             )}
@@ -190,155 +215,287 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Painel de <span className="text-brand">Demandas</span></h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gerencie o fluxo operacional em tempo real</p>
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      {/* Header com Filtros */}
+      <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-8">
+        <div className="shrink-0">
+          <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Painel de <span className="text-brand">Demandas</span></h2>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{totalCount} registros localizados</p>
         </div>
-        <div className="flex flex-col md:flex-row gap-3 flex-1 max-w-2xl">
+        
+        <div className="flex flex-col md:flex-row gap-4 flex-1 max-w-4xl">
+          <div className="relative md:w-72">
+            <Filter className="absolute left-4 top-3.5 text-slate-400" size={18} />
+            <select 
+              value={statusFilter} 
+              onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+              className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 text-sm appearance-none cursor-pointer focus:ring-2 focus:ring-brand/20 transition-all"
+            >
+              <option value="all">Todas as Situações</option>
+              <option value="st-delayed">🚨 Fora do SLA (Atrasadas)</option>
+              <option value="today">⏰ Vencem Hoje</option>
+              <optgroup label="Status do Sistema">
+                {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </optgroup>
+            </select>
+          </div>
+
           <div className="relative flex-1">
             <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-            <input type="text" placeholder="Pesquisar por assunto ou solicitante..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-brand outline-none font-medium transition-all" />
+            <input type="text" placeholder="Pesquisar por assunto ou solicitante..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }} className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:bg-white transition-all shadow-sm focus:ring-2 focus:ring-brand/20" />
           </div>
-          <button onClick={() => navigate('/tarefas/nova')} className="bg-brand text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center shadow-lg shadow-brand/20 hover:brightness-110 transition-all">
+
+          <button onClick={() => navigate('/tarefas/nova')} className="bg-brand text-white px-8 py-3.5 rounded-2xl font-black uppercase text-[10px] flex items-center justify-center shadow-xl shadow-brand/20 hover:brightness-110 active:scale-95 transition-all">
             <PlusCircle size={18} className="mr-2" /> Novo Protocolo
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
-        <table className="w-full text-left min-w-[1000px] border-collapse">
-          <thead className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            <tr>
-              <th className="px-10 py-6">Identificação da Demanda</th>
-              <th className="px-8 py-6">Responsável</th>
-              <th className="px-8 py-6 text-center">Situação Atual</th>
-              <th className="px-8 py-6 text-right">Ações Operacionais</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredTasks.map(task => (
-              <tr key={task.id} className="hover:bg-slate-50/50 transition-all group cursor-pointer" onClick={() => setSelectedTask(task)}>
-                <td className="px-10 py-6">
-                  <div className="font-black text-slate-800 text-sm group-hover:text-brand transition-colors mb-1 uppercase tracking-tight">{task.title}</div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded-md">{sectors.find(s => s.id === task.sectorId)?.name}</span>
-                    <span className="text-[10px] font-bold text-brand uppercase tracking-tighter flex items-center">
-                      <Clock size={10} className="mr-1" /> {new Date(task.deadline).toLocaleDateString()}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-8 py-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400">
-                      <UserIcon size={14} />
-                    </div>
-                    <span className="text-sm font-bold text-slate-600">{users.find(u => u.id === task.responsibleId)?.name}</span>
-                  </div>
-                </td>
-                <td className="px-8 py-6 text-center">
-                  <div className="flex justify-center">{getStatusBadge(task)}</div>
-                </td>
-                <td className="px-10 py-6 text-right relative">
-                   <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                      {renderActionButtons(task)}
-                      <button onClick={(e) => { e.stopPropagation(); navigate(`/tarefas/editar/${task.id}`); }} className="p-2.5 bg-white text-slate-400 border border-slate-100 rounded-xl hover:text-brand hover:border-brand/20 transition-all shadow-sm">
-                        <Edit2 size={16}/>
-                      </button>
-                   </div>
-                </td>
+      {/* Listagem */}
+      <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[1000px]">
+            <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              <tr>
+                <th className="px-10 py-7">Identificação / Setor</th>
+                <th className="px-10 py-7">Responsável</th>
+                <th className="px-10 py-7 text-center">Situação Atual</th>
+                <th className="px-10 py-7 text-right">Ações Rápidas</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {filteredTasks.length === 0 && (
-          <div className="p-20 text-center flex flex-col items-center">
-            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-200 mb-4">
-              <Search size={40} />
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={4} className="py-24 text-center">
+                    <Loader2 className="animate-spin text-brand mx-auto mb-4" size={32} />
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Consultando Banco de Dados...</p>
+                  </td>
+                </tr>
+              ) : tasks.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-24 text-center">
+                    <div className="text-slate-200 mb-4"><Search size={48} className="mx-auto" /></div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhuma demanda encontrada</p>
+                  </td>
+                </tr>
+              ) : tasks.map(task => {
+                const responsible = users.find(u => u.id === task.responsible_id);
+                return (
+                  <tr key={task.id} className="hover:bg-slate-50/50 group transition-all cursor-pointer" onClick={() => setSelectedTask(task)}>
+                    <td className="px-10 py-7">
+                      <div className="font-black text-slate-800 text-sm uppercase group-hover:text-brand transition-colors">{task.title}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded">{sectors.find(s => s.id === task.sector_id)?.name || 'Setor não identificado'}</span>
+                        <span className="text-[10px] font-bold text-brand uppercase flex items-center"><Clock size={10} className="mr-1" /> {new Date(task.deadline).toLocaleDateString()}</span>
+                      </div>
+                    </td>
+                    <td className="px-10 py-7">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 font-black text-xs uppercase shadow-sm overflow-hidden shrink-0">
+                          {responsible?.profile_image_url ? (
+                            <img src={responsible.profile_image_url} alt={responsible.name} className="w-full h-full object-cover" />
+                          ) : (
+                            responsible?.name?.charAt(0) || '?'
+                          )}
+                        </div>
+                        <span className="text-sm font-bold text-slate-600 truncate max-w-[150px]">{responsible?.name || 'Sem responsável'}</span>
+                      </div>
+                    </td>
+                    <td className="px-10 py-7 text-center">
+                      <div className="flex justify-center">{getStatusBadge(task)}</div>
+                    </td>
+                    <td className="px-10 py-7 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                        {renderActionButtons(task)}
+                        <button onClick={(e) => { e.stopPropagation(); navigate(`/tarefas/editar/${task.id}`); }} className="p-3 bg-white text-slate-400 border border-slate-100 rounded-xl hover:text-brand transition-all shadow-sm hover:border-brand/20">
+                          <Edit2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        
+        {/* Paginação */}
+        {totalCount > ITEMS_PER_PAGE && (
+          <div className="px-10 py-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mostrando {tasks.length} de {totalCount} resultados</p>
+            <div className="flex gap-2">
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand disabled:opacity-30"><ChevronLeft size={18}/></button>
+              <button disabled={currentPage * ITEMS_PER_PAGE >= totalCount} onClick={() => setCurrentPage(p => p + 1)} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand disabled:opacity-30"><ChevronRight size={18}/></button>
             </div>
-            <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Nenhuma demanda encontrada para os filtros aplicados</p>
           </div>
         )}
       </div>
 
+      {/* Modal de Detalhes (Prontuário) */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white rounded-[48px] shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-hidden flex flex-col border border-slate-100">
-            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white rounded-[56px] shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden flex flex-col border border-slate-100">
+            <div className="p-10 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
               <div className="flex items-center gap-3">
-                <span className="w-3 h-3 rounded-full bg-brand animate-ping" />
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Prontuário da Demanda</h3>
+                <div className="w-10 h-10 bg-brand rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand/20">
+                  <Hash size={20} />
+                </div>
+                <div>
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Prontuário de Demanda</h3>
+                  <p className="text-[8px] font-bold text-slate-500 uppercase">Protocolo: {selectedTask.id.split('-')[0]}</p>
+                </div>
               </div>
-              <button onClick={() => setSelectedTask(null)} className="p-3 hover:bg-slate-100 rounded-full text-slate-400 transition-all"><X size={24} /></button>
+              <button onClick={() => setSelectedTask(null)} className="p-3 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X size={28} /></button>
             </div>
             
             <div className="p-10 overflow-y-auto custom-scrollbar flex-1 space-y-10">
-                <div className="space-y-4">
-                  <h4 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">{selectedTask.title}</h4>
-                  <div className="flex flex-wrap gap-3">
-                    {getStatusBadge(selectedTask)}
-                    <span className="px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-black uppercase rounded-full flex items-center">
-                      <Tag size={12} className="mr-1.5" /> {taskTypes.find(t => t.id === selectedTask.taskTypeId)?.name}
-                    </span>
-                    <span className="px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-black uppercase rounded-full flex items-center">
-                      <AlertTriangle size={12} className="mr-1.5" /> {criticalities.find(c => c.id === selectedTask.criticalityId)?.name}
-                    </span>
+              {/* Seção 1: Identificação */}
+              <div className="space-y-6">
+                <div className="flex justify-between items-start gap-4">
+                  <div className="space-y-1 flex-1">
+                    <h4 className="text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">{selectedTask.title}</h4>
+                    <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2"><Tag size={12} /> {taskTypes.find(tt => tt.id === selectedTask.task_type_id)?.name || 'Atividade Geral'}</p>
+                  </div>
+                  <div className="shrink-0">{getStatusBadge(selectedTask)}</div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                   <div className="bg-slate-50 p-5 rounded-[28px] border border-slate-100">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1"><Workflow size={10} className="text-brand" /> Setor</p>
+                      <p className="font-bold text-slate-700 text-sm truncate">{sectors.find(s => s.id === selectedTask.sector_id)?.name || 'N/A'}</p>
+                   </div>
+                   <div className="bg-slate-50 p-5 rounded-[28px] border border-slate-100">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1"><Flag size={10} className="text-brand" /> Criticidade</p>
+                      <p className="font-bold text-slate-700 text-sm">{criticalities.find(c => c.id === selectedTask.criticality_id)?.name || 'Média'}</p>
+                   </div>
+                   <div className="bg-slate-50 p-5 rounded-[28px] border border-slate-100">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1"><LogIn size={10} className="text-brand" /> Entrada</p>
+                      <p className="font-bold text-slate-700 text-sm">{entryMethods.find(em => em.id === selectedTask.entry_method_id)?.name || 'Interno'}</p>
+                   </div>
+                   <div className="bg-slate-50 p-5 rounded-[28px] border border-slate-100">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1"><Search size={10} className="text-brand" /> Solicitante</p>
+                      <p className="font-bold text-slate-700 text-sm truncate">{selectedTask.solicitor || 'Origem Direta'}</p>
+                   </div>
+                </div>
+              </div>
+
+              {/* Seção 2: Cronometria */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-8 border-y border-slate-100/60">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400"><Calendar size={20} /></div>
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Abertura</p>
+                    <p className="font-bold text-slate-800 text-sm">{new Date(selectedTask.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-8 py-8 border-y border-slate-50">
-                    <div className="space-y-1">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Responsável Atual</p>
-                      <p className="font-bold text-slate-800">{users.find(u => u.id === selectedTask.responsibleId)?.name}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Solicitante / Cliente</p>
-                      <p className="font-bold text-slate-800">{selectedTask.solicitor || 'Interno'}</p>
-                    </div>
-                </div>
-
-                <div className="space-y-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-brand flex items-center">
-                    <MessageSquare size={14} className="mr-2" /> Orientações e Escopo
-                  </p>
-                  <div className="bg-slate-50 p-8 rounded-[32px] text-sm leading-relaxed text-slate-700 whitespace-pre-wrap border border-slate-100 font-medium">
-                    {selectedTask.observations || 'Nenhuma observação técnica registrada para esta demanda.'}
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400"><Play size={20} /></div>
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Início Real</p>
+                    <p className="font-bold text-slate-800 text-sm">{selectedTask.started_at ? new Date(selectedTask.started_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '---'}</p>
                   </div>
                 </div>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-brand/5 rounded-2xl flex items-center justify-center text-brand"><Clock size={20} /></div>
+                  <div>
+                    <p className="text-[9px] font-black text-brand uppercase tracking-widest">Prazo SLA</p>
+                    <p className="font-bold text-slate-950 text-sm">{new Date(selectedTask.deadline).toLocaleDateString()}</p>
+                  </div>
+                </div>
+              </div>
 
-                <div className="space-y-6 pt-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center">
-                      <Clock size={14} className="mr-2" /> Rastreabilidade (Histórico)
-                    </p>
-                    {historyLoading ? (
-                      <div className="flex justify-center p-10"><Loader2 className="animate-spin text-brand"/></div>
-                    ) : (
-                        <div className="relative pl-8 space-y-8 before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
-                            {taskHistory.map((h, idx) => (
-                                <div key={h.id} className="relative">
-                                    <div className={`absolute -left-8 top-1 w-6 h-6 rounded-full border-4 border-white shadow-sm flex items-center justify-center ${idx === 0 ? 'bg-brand' : 'bg-slate-200'}`} />
-                                    <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                                      <div className="flex justify-between items-start mb-1">
-                                        <p className="text-[10px] font-black text-slate-800 uppercase">
-                                          Alteração para {statuses.find(s => s.id === h.newStatusId)?.name || 'Status Atualizado'}
-                                        </p>
-                                        <span className="text-[9px] font-bold text-slate-400">{new Date(h.timestamp).toLocaleString('pt-BR')}</span>
-                                      </div>
-                                      <p className="text-[10px] font-bold text-slate-400">Ação executada por <span className="text-brand font-black">{users.find(u => u.id === h.changedById)?.name || 'Sistema'}</span></p>
-                                    </div>
-                                </div>
-                            ))}
-                            {taskHistory.length === 0 && (
-                              <p className="text-xs text-slate-400 italic">Nenhum evento registrado até o momento.</p>
+              {/* Seção 3: Responsável e Escopo */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                <div className="lg:col-span-1 space-y-6">
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><UserIcon size={14} /> Equipe Operacional</p>
+                    {(() => {
+                      const responsible = users.find(u => u.id === selectedTask.responsible_id);
+                      return (
+                        <div className="flex items-center gap-4 bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+                          <div className="w-14 h-14 rounded-2xl bg-brand text-white flex items-center justify-center font-black text-xl shadow-lg shadow-brand/20 uppercase overflow-hidden shrink-0">
+                            {responsible?.profile_image_url ? (
+                              <img src={responsible.profile_image_url} alt={responsible.name} className="w-full h-full object-cover" />
+                            ) : (
+                              responsible?.name?.charAt(0) || '?'
                             )}
+                          </div>
+                          <div className="overflow-hidden">
+                            <p className="text-sm font-black text-slate-900 uppercase truncate">{responsible?.name || 'Não Atribuído'}</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Responsável Primário</p>
+                          </div>
                         </div>
-                    )}
+                      );
+                    })()}
+                  </div>
+
+                  {selectedTask.finished_at && (
+                    <div className="bg-emerald-50 p-6 rounded-[32px] border border-emerald-100">
+                       <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1 flex items-center gap-1.5"><CheckCircle size={10} /> Entrega Realizada</p>
+                       <p className="font-bold text-emerald-800 text-sm">{new Date(selectedTask.finished_at).toLocaleString()}</p>
+                    </div>
+                  )}
                 </div>
+
+                <div className="lg:col-span-2 space-y-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-brand flex items-center gap-2"><Info size={14} /> Detalhamento do Escopo</p>
+                  <div className="bg-slate-50 p-8 rounded-[40px] text-sm text-slate-700 whitespace-pre-wrap border border-slate-100 shadow-inner italic min-h-[160px]">
+                    {selectedTask.observations || 'Nenhum detalhamento técnico registrado para este protocolo.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção 4: Rastreabilidade */}
+              <div className="space-y-8">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><Zap size={14} /> Rastreabilidade de Movimentações</p>
+                {historyLoading ? (
+                  <div className="py-10 text-center"><Loader2 className="animate-spin text-brand mx-auto"/></div>
+                ) : (
+                  <div className="relative pl-10 space-y-8 before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
+                    {taskHistory.length === 0 ? (
+                      <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 border-dashed text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase italic">Aguardando primeiras movimentações operacionais.</p>
+                      </div>
+                    ) : taskHistory.map(h => (
+                      <div key={h.id} className="relative">
+                        <div className="absolute -left-10 top-1.5 w-7 h-7 rounded-full border-4 border-white bg-slate-200 shadow-sm flex items-center justify-center text-white">
+                          <CornerDownRight size={12} />
+                        </div>
+                        <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-black text-slate-400 uppercase">Status:</span>
+                              <p className="text-[10px] font-black text-brand uppercase tracking-tighter">{statuses.find(s => s.id === h.new_status_id)?.name}</p>
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded">{new Date(h.timestamp).toLocaleString('pt-BR')}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                             {(() => {
+                               const actor = users.find(u => u.id === h.changed_by_id);
+                               return (
+                                 <>
+                                   <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-[8px] font-black text-slate-500 uppercase overflow-hidden shadow-sm">
+                                     {actor?.profile_image_url ? (
+                                       <img src={actor.profile_image_url} alt={actor.name} className="w-full h-full object-cover" />
+                                     ) : (
+                                       actor?.name?.charAt(0) || '?'
+                                     )}
+                                   </div>
+                                   <p className="text-[9px] font-bold text-slate-400 uppercase">Operado por: <span className="text-slate-800 font-black">{actor?.name || 'Sistema'}</span></p>
+                                 </>
+                               );
+                             })()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="p-10 border-t border-slate-100 bg-slate-50/50 flex gap-4">
-                {renderActionButtons(selectedTask, true)}
+              {renderActionButtons(selectedTask, true)}
             </div>
           </div>
         </div>

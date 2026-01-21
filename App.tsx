@@ -22,25 +22,26 @@ const App: React.FC = () => {
   };
 
   const determineAndApplyTheme = async (user: User) => {
-    // Se tiver mais de uma empresa vinculada, usa a cor padrão
-    if (user.companyIds && user.companyIds.length > 1) {
+    // Corrected company_ids (line 25)
+    if (user.company_ids && user.company_ids.length > 1) {
       applyCompanyTheme('#FF3D03');
-    } else if (user.companyIds && user.companyIds.length === 1) {
-      // Se tiver apenas uma, busca a cor dessa empresa
+    // Corrected company_ids (line 27)
+    } else if (user.company_ids && user.company_ids.length === 1) {
       const { data: company } = await supabase
         .from('companies')
-        .select('primaryColor')
-        .eq('id', user.companyIds[0])
+        .select('primary_color')
+        // Corrected company_ids (line 31)
+        .eq('id', user.company_ids[0])
         .single();
-      applyCompanyTheme(company?.primaryColor);
+      applyCompanyTheme(company?.primary_color);
     } else {
-      // Fallback para a empresa principal caso companyIds esteja vazio (legado)
       const { data: company } = await supabase
         .from('companies')
-        .select('primaryColor')
-        .eq('id', user.companyId)
+        .select('primary_color')
+        // Corrected company_id (line 38)
+        .eq('id', user.company_id)
         .single();
-      applyCompanyTheme(company?.primaryColor);
+      applyCompanyTheme(company?.primary_color);
     }
   };
 
@@ -50,14 +51,14 @@ const App: React.FC = () => {
       if (saved) {
         const { data: user, error } = await supabase
           .from('users')
-          .select('*, groups(permissions)')
+          .select('*, group:groups(permissions)')
           .eq('id', saved.id)
           .eq('active', true)
           .single();
 
         if (user && !error) {
           setCurrentUser(user);
-          setUserPermissions(user.groups?.permissions || []);
+          setUserPermissions((user.group as any)?.permissions || []);
           await determineAndApplyTheme(user);
         } else {
           sessionManager.clear();

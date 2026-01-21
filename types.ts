@@ -23,7 +23,7 @@ export enum VisibilityScope {
 export interface Company {
   id: string;
   name: string;
-  primaryColor?: string;
+  primary_color?: string;
   created_at?: string;
 }
 
@@ -31,7 +31,7 @@ export interface AccessGroup {
   id: string;
   name: string;
   permissions: MenuKey[];
-  companyId: string;
+  company_id: string;
 }
 
 export interface User {
@@ -40,11 +40,12 @@ export interface User {
   email: string;
   password?: string;
   active: boolean;
-  groupId: string;
-  companyId: string; 
-  companyIds: string[]; 
-  visibilityScope?: VisibilityScope;
-  visibleSectorIds?: string[];
+  group_id: string;
+  company_id: string; 
+  company_ids: string[]; 
+  visibility_scope?: VisibilityScope;
+  visible_sector_ids?: string[];
+  profile_image_url?: string;
 }
 
 export interface TaskType {
@@ -52,34 +53,34 @@ export interface TaskType {
   name: string;
   description?: string;
   active: boolean;
-  companyId: string;
-  companyIds?: string[];
+  company_id: string;
+  company_ids?: string[];
 }
 
 export interface Sector {
   id: string;
   name: string;
   active: boolean;
-  companyId: string;
-  companyIds?: string[];
+  company_id: string;
+  company_ids?: string[];
 }
 
 export interface Criticality {
   id: string;
   name: string;
   level: number;
-  slaDays?: number;
+  sla_days?: number;
   active: boolean;
-  companyId: string;
-  companyIds?: string[];
+  company_id: string;
+  company_ids?: string[];
 }
 
 export interface EntryMethod {
   id: string;
   name: string;
   active: boolean;
-  companyId: string;
-  companyIds?: string[];
+  company_id: string;
+  company_ids?: string[];
 }
 
 export interface TaskStatus {
@@ -88,33 +89,33 @@ export interface TaskStatus {
   order: number;
   isFinal: boolean;
   active: boolean;
-  companyId: string;
-  companyIds?: string[];
+  company_id: string;
+  company_ids?: string[];
 }
 
 export interface Task {
   id: string;
   title: string;
-  responsibleId: string;
+  responsible_id: string;
   deadline: string; 
-  criticalityId: string;
-  sectorId: string;
-  entryMethodId: string;
-  taskTypeId: string;
+  criticality_id: string;
+  sector_id: string;
+  entry_method_id: string;
+  task_type_id: string;
   solicitor?: string;
   observations: string;
-  statusId: string;
-  createdAt: string;
-  startedAt?: string;
-  finishedAt?: string;
-  companyId: string;
+  status_id: string;
+  created_at: string;
+  started_at?: string;
+  finished_at?: string;
+  company_id: string;
 }
 
 export interface TaskHistory {
   id: string;
-  taskId: string;
-  oldStatusId: string;
-  newStatusId: string;
-  changedById: string;
+  task_id: string;
+  old_status_id: string;
+  new_status_id: string;
+  changed_by_id: string;
   timestamp: string;
 }

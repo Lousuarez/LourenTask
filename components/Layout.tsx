@@ -117,9 +117,13 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
           </nav>
 
           <div className="p-4 border-t border-white/5 bg-slate-950/50">
-            <div className="flex items-center px-4 py-3 mb-2 bg-white/5 rounded-2xl">
-              <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center text-xs font-black mr-3 text-white">
-                {user.name.charAt(0).toUpperCase()}
+            <div className="flex items-center px-4 py-3 mb-2 bg-white/5 rounded-2xl overflow-hidden">
+              <div className="w-10 h-10 rounded-xl bg-brand flex items-center justify-center text-sm font-black mr-3 text-white shadow-lg overflow-hidden shrink-0">
+                {user.profile_image_url ? (
+                  <img src={user.profile_image_url} alt={user.name} className="w-full h-full object-cover" />
+                ) : (
+                  user.name.charAt(0).toUpperCase()
+                )}
               </div>
               <div className="overflow-hidden">
                 <p className="text-xs font-black truncate text-white uppercase tracking-tight">{user.name}</p>

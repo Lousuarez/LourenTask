@@ -22,7 +22,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     try {
       const { data: user, error: dbError } = await supabase
         .from('users')
-        .select('*, groups(permissions)')
+        .select('*, group:groups(permissions)')
         .eq('email', email)
         .eq('password', password)
         .single();
@@ -32,7 +32,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       } else if (!user.active) {
         setError('Acesso negado: conta inativa.');
       } else {
-        onLogin(user, user.groups?.permissions || []);
+        // Mapeia permissions do grupo se existir
+        const permissions = (user.group as any)?.permissions || [];
+        onLogin(user, permissions);
       }
     } catch (err) {
       setError('Erro ao conectar com o servidor.');
