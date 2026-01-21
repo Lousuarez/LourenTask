@@ -14,6 +14,10 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
+    <!-- Shim para evitar erro de 'process is not defined' na Hostinger -->
+    <script>
+        window.process = window.process || { env: {} };
+    </script>
 <script type="importmap">
 {
   "imports": {
@@ -31,5 +35,7 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
+    <!-- Carregamento do ponto de entrada da aplicação -->
+    <script type="module" src="./index.tsx"></script>
 </body>
 </html>
