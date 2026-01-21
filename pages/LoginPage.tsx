@@ -1,33 +1,43 @@
 
 import React, { useState } from 'react';
-import { User } from '../types';
-import { db } from '../db';
+import { User, MenuKey } from '../types';
+import { supabase } from '../db';
 import { Lock, Mail, AlertCircle, Zap } from 'lucide-react';
 
 interface LoginPageProps {
-  onLogin: (user: User) => void;
+  onLogin: (user: User, permissions: MenuKey[]) => void;
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    const users = db.users();
-    const user = users.find(u => u.email === email && u.password === password);
+    try {
+      const { data: user, error: dbError } = await supabase
+        .from('users')
+        .select('*, groups(permissions)')
+        .eq('email', email)
+        .eq('password', password) // Nota: Em produção, use Supabase Auth ou Hash de senhas
+        .single();
 
-    if (user) {
-      if (!user.active) {
+      if (dbError || !user) {
+        setError('E-mail ou senha incorretos.');
+      } else if (!user.active) {
         setError('Acesso negado: conta inativa.');
-        return;
+      } else {
+        onLogin(user, user.groups?.permissions || []);
       }
-      onLogin(user);
-    } else {
-      setError('E-mail ou senha incorretos.');
+    } catch (err) {
+      setError('Erro ao conectar com o servidor.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -35,21 +45,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     <div className="min-h-screen bg-[#030712] flex items-center justify-center p-6">
       <div className="max-w-md w-full">
         <div className="text-center mb-10 flex flex-col items-center">
-          <div className="w-20 h-20 mb-6 bg-[#FF3D03] rounded-[24px] flex items-center justify-center text-white shadow-2xl shadow-[#FF3D03]/40 transform -rotate-3 transition-transform hover:rotate-0 cursor-default">
+          <div className="w-20 h-20 mb-6 bg-[#FF3D03] rounded-[24px] flex items-center justify-center text-white shadow-2xl shadow-[#FF3D03]/40">
              <Zap size={44} fill="currentColor" />
           </div>
           <h1 className="text-4xl font-black text-white tracking-tighter">
             Louren<span className="text-[#FF3D03]">Task</span>
           </h1>
-          <p className="mt-3 text-slate-500 font-bold uppercase tracking-[0.2em] text-[10px]">Gestão Inteligente de Demandas</p>
         </div>
 
-        <div className="bg-white rounded-[32px] p-10 shadow-2xl border border-white/5 relative overflow-hidden">
+        <div className="bg-white rounded-[32px] p-10 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-[#FF3D03]"></div>
           
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="flex items-center p-4 bg-red-50 text-red-600 rounded-2xl border border-red-100 animate-shake">
+              <div className="flex items-center p-4 bg-red-50 text-red-600 rounded-2xl border border-red-100">
                 <AlertCircle size={18} className="mr-3 flex-shrink-0" />
                 <span className="text-xs font-black uppercase tracking-tight">{error}</span>
               </div>
@@ -63,8 +72,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                   type="email" 
                   required
                   value={email}
+                  disabled={loading}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#FF3D03] focus:border-[#FF3D03] outline-none transition-all font-bold text-slate-700"
+                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#FF3D03] outline-none font-bold text-slate-700"
                   placeholder="Seu e-mail"
                 />
               </div>
@@ -78,8 +88,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                   type="password" 
                   required
                   value={password}
+                  disabled={loading}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#FF3D03] focus:border-[#FF3D03] outline-none transition-all font-bold text-slate-700"
+                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#FF3D03] outline-none font-bold text-slate-700"
                   placeholder="••••••••"
                 />
               </div>
@@ -87,16 +98,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
             <button 
               type="submit" 
-              className="w-full bg-[#FF3D03] hover:bg-[#E63602] text-white font-black py-5 rounded-2xl transition-all shadow-xl shadow-[#FF3D03]/30 active:scale-[0.97] uppercase tracking-widest text-xs"
+              disabled={loading}
+              className="w-full bg-[#FF3D03] hover:bg-[#E63602] text-white font-black py-5 rounded-2xl transition-all shadow-xl shadow-[#FF3D03]/30 active:scale-[0.97] uppercase tracking-widest text-xs disabled:opacity-50"
             >
-              Autenticar Usuário
+              {loading ? 'AUTENTICANDO...' : 'Entrar'}
             </button>
           </form>
-        </div>
-        
-        <div className="mt-8 text-center">
-            <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Acesso Público de Demonstração</p>
-            <p className="text-xs font-mono text-[#FF3D03] mt-1">lsuarez@lourentask.com / admin</p>
         </div>
       </div>
     </div>

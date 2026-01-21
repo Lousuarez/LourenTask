@@ -1,12 +1,12 @@
 
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend 
 } from 'recharts';
-import { db } from '../db';
-import { Task, TaskStatus } from '../types';
+import { supabase } from '../db';
+import { Task, TaskStatus, Sector, Criticality, User } from '../types';
 import { 
   ClipboardList, 
   Clock, 
@@ -25,40 +25,71 @@ const COLORS = ['#FF3D03', '#FF7F50', '#FFB347', '#D2691E', '#FF4500', '#A0522D'
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const dashboardRef = useRef<HTMLDivElement>(null);
-  const tasks = db.tasks();
-  const statuses = db.statuses();
-  const sectors = db.sectors();
-  const criticalities = db.criticalities();
-  const users = db.users();
+  
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [statuses, setStatuses] = useState<TaskStatus[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [criticalities, setCriticalities] = useState<Criticality[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const [
+        { data: t }, 
+        { data: s }, 
+        { data: sec }, 
+        { data: crit }, 
+        { data: u }
+      ] = await Promise.all([
+        supabase.from('tasks').select('*'),
+        supabase.from('statuses').select('*'),
+        supabase.from('sectors').select('*'),
+        supabase.from('criticalities').select('*'),
+        supabase.from('users').select('*')
+      ]);
+
+      setTasks(t || []);
+      setStatuses(s || []);
+      setSectors(sec || []);
+      setCriticalities(crit || []);
+      setUsers(u || []);
+      setLoading(false);
+    };
+    fetchData();
+  }, []);
 
   const metrics = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const nextWeek = new Date(today);
-    nextWeek.setDate(today.getDate() + 7);
+    // Helper para data local YYYY-MM-DD
+    const d = new Date();
+    const todayISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    
+    // Calcula limite da semana
+    const nextWeekDate = new Date();
+    nextWeekDate.setDate(d.getDate() + 7);
+    const nextWeekISO = `${nextWeekDate.getFullYear()}-${String(nextWeekDate.getMonth() + 1).padStart(2, '0')}-${String(nextWeekDate.getDate()).padStart(2, '0')}`;
+
+    const finishedIds = statuses.filter(s => s.isFinal).map(s => s.id);
 
     const counts = {
       open: tasks.filter(t => t.statusId === 'st-open').length,
       started: tasks.filter(t => t.statusId === 'st-started').length,
       paused: tasks.filter(t => t.statusId === 'st-paused').length,
       delayed: tasks.filter(t => {
-        const deadline = new Date(t.deadline);
-        const status = statuses.find(s => s.id === t.statusId);
-        return deadline < new Date() && !status?.isFinal;
+        const deadlineISO = t.deadline.split('T')[0];
+        return deadlineISO < todayISO && !finishedIds.includes(t.statusId);
       }).length,
-      finished: tasks.filter(t => {
-        const status = statuses.find(s => s.id === t.statusId);
-        return status?.isFinal;
-      }).length,
+      finished: tasks.filter(t => finishedIds.includes(t.statusId)).length,
       total: tasks.length,
       today: tasks.filter(t => {
-        const d = new Date(t.deadline);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime() === today.getTime();
+        const deadlineISO = t.deadline.split('T')[0];
+        // Conta apenas se for hoje e NÃO estiver finalizada
+        return deadlineISO === todayISO && !finishedIds.includes(t.statusId);
       }).length,
       week: tasks.filter(t => {
-        const d = new Date(t.deadline);
-        return d > today && d <= nextWeek;
+        const deadlineISO = t.deadline.split('T')[0];
+        // Conta se for entre amanhã e os próximos 7 dias e NÃO estiver finalizada
+        return deadlineISO > todayISO && deadlineISO <= nextWeekISO && !finishedIds.includes(t.statusId);
       }).length
     };
     return counts;
@@ -77,20 +108,6 @@ const Dashboard: React.FC = () => {
       count: tasks.filter(t => t.criticalityId === crit.id).length
     }));
   }, [tasks, criticalities]);
-
-  const topResponsibles = useMemo(() => {
-    const counts: Record<string, number> = {};
-    tasks.forEach(t => {
-      counts[t.responsibleId] = (counts[t.responsibleId] || 0) + 1;
-    });
-    return Object.entries(counts)
-      .map(([id, count]) => ({
-        name: users.find(u => u.id === id)?.name || 'Desconhecido',
-        count
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  }, [tasks, users]);
 
   const cards = [
     { label: 'Em aberto', value: metrics.open, icon: ClipboardList, color: 'text-orange-600', bg: 'bg-orange-50', filter: 'st-open' },
@@ -121,16 +138,18 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  if (loading) return <div className="p-8 text-center text-slate-400 font-bold">SINCRONIZANDO DADOS EM NUVEM...</div>;
+
   return (
     <div className="space-y-8 pb-12">
       <div className="flex justify-between items-end">
          <div>
             <h1 className="text-4xl font-black text-slate-950 tracking-tight">Painel <span className="text-[#FF3D03]">Gerencial</span></h1>
-            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mt-2">Métricas de Desempenho em Tempo Real</p>
+            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mt-2">Métricas Supabase em Tempo Real</p>
          </div>
          <button 
            onClick={handleExport}
-           className="bg-[#FF3D03] hover:bg-[#E63602] text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center transition-all shadow-xl shadow-[#FF3D03]/20 active:scale-95"
+           className="bg-[#FF3D03] hover:bg-[#E63602] text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center transition-all shadow-xl shadow-[#FF3D03]/20"
          >
            <Download size={18} className="mr-3" /> Gerar Relatório
          </button>
@@ -142,9 +161,9 @@ const Dashboard: React.FC = () => {
             <div 
               key={idx} 
               onClick={() => navigate(`/tarefas?filter=${card.filter}`)}
-              className="bg-white p-7 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:border-[#FF3D03]/30 transition-all cursor-pointer flex items-center group active:scale-95"
+              className="bg-white p-7 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:border-[#FF3D03]/30 transition-all cursor-pointer flex items-center group"
             >
-              <div className={`p-4 rounded-2xl ${card.bg} ${card.color} mr-5 group-hover:scale-110 transition-transform duration-300`}>
+              <div className={`p-4 rounded-2xl ${card.bg} ${card.color} mr-5 group-hover:scale-110 transition-transform`}>
                 <card.icon size={26} />
               </div>
               <div>
@@ -172,17 +191,13 @@ const Dashboard: React.FC = () => {
                     outerRadius={110}
                     paddingAngle={10}
                     dataKey="value"
-                    stroke="none"
                   >
                     {tasksBySector.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.15)', padding: '15px' }}
-                    itemStyle={{ fontWeight: '900', fontSize: '12px' }}
-                  />
-                  <Legend iconType="rect" iconSize={10} wrapperStyle={{ paddingTop: '20px', fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase' }} />
+                  <Tooltip />
+                  <Legend />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -193,10 +208,10 @@ const Dashboard: React.FC = () => {
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={tasksByCriticality}>
-                  <CartesianGrid strokeDasharray="5 5" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: '900', fill: '#94a3b8', textTransform: 'uppercase' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: '900', fill: '#94a3b8' }} />
-                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }} />
+                  <CartesianGrid strokeDasharray="5 5" vertical={false} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                  <YAxis axisLine={false} tickLine={false} />
+                  <Tooltip />
                   <Bar dataKey="count" fill="#FF3D03" radius={[12, 12, 0, 0]} barSize={44} />
                 </BarChart>
               </ResponsiveContainer>

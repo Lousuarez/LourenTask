@@ -1,15 +1,16 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../db';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../db';
 import { MenuKey } from '../types';
 import { 
   Plus, 
   Search, 
   Edit2, 
   Trash2, 
-  Check, 
-  X, 
-  AlertCircle 
+  X,
+  AlertCircle,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 
 interface CRUDPageProps {
@@ -19,6 +20,7 @@ interface CRUDPageProps {
 const MENU_LABELS: Record<MenuKey, string> = {
   [MenuKey.DASHBOARD]: 'Visualizar Dashboard',
   [MenuKey.TASKS_CREATE]: 'Cadastrar Novas Tarefas',
+  [MenuKey.TASKS_EDIT]: 'Edição de tarefas (Acesso Especial)',
   [MenuKey.TASKS_LIST]: 'Visualizar/Gerenciar Lista de Tarefas',
   [MenuKey.CONFIG_TASK_TYPE]: 'Admin: Tipos de Tarefa',
   [MenuKey.CONFIG_SECTOR]: 'Admin: Setores',
@@ -33,62 +35,139 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity }) => {
   const [items, setItems] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<any | null>(null);
   const [editingItem, setEditingItem] = useState<any | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
 
   const [groups, setGroups] = useState<any[]>([]);
-  const [statuses, setStatuses] = useState<any[]>([]);
 
-  useEffect(() => {
-    setItems((db as any)[entity]());
-    if (entity === 'users') setGroups(db.groups());
-    if (entity === 'users') setStatuses(db.statuses());
-  }, [entity]);
+  // Mapeamento correto de entidades para tabelas do Supabase
+  const tableName = entity === 'taskTypes' ? 'task_types' : entity === 'entryMethods' ? 'entry_methods' : entity;
 
-  const filteredItems = useMemo(() => {
-    return items.filter(item => 
-      (item.name || item.title || item.email || '').toLowerCase().includes(search.toLowerCase())
-    );
-  }, [items, search]);
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget as HTMLFormElement);
-    const data: any = {};
-    formData.forEach((value, key) => {
-      if (key === 'active' || key === 'isFinal') {
-        data[key] = true;
-      } else if (key === 'level' || key === 'order' || key === 'slaDays') {
-        data[key] = parseInt(value as string);
-      } else if (key === 'permissions') {
-        const perms = formData.getAll('permissions');
-        data[key] = perms;
-      } else {
-        data[key] = value;
-      }
-    });
-
-    if (!formData.has('active')) data.active = false;
-    if (!formData.has('isFinal')) data.isFinal = false;
-
-    let updated;
-    if (editingItem) {
-      updated = items.map(i => i.id === editingItem.id ? { ...i, ...data } : i);
-    } else {
-      updated = [...items, { ...data, id: crypto.randomUUID() }];
+  const fetchData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data, error: fetchError } = await supabase.from(tableName).select('*');
+      if (fetchError) throw fetchError;
+      setItems(data || []);
+    } catch (err: any) {
+      setError('Erro ao carregar dados: ' + err.message);
     }
 
-    setItems(updated);
-    db.save(entity === 'taskTypes' ? 'task_types' : entity === 'entryMethods' ? 'entry_methods' : entity, updated);
-    setIsModalOpen(false);
-    setEditingItem(null);
+    if (entity === 'users') {
+      const { data: gData } = await supabase.from('groups').select('*');
+      setGroups(gData || []);
+    }
+    setLoading(false);
   };
 
-  const handleDelete = (id: string) => {
-    const updated = items.filter(i => i.id !== id);
-    setItems(updated);
-    db.save(entity === 'taskTypes' ? 'task_types' : entity === 'entryMethods' ? 'entry_methods' : entity, updated);
-    setDeleteConfirm(null);
+  useEffect(() => {
+    fetchData();
+  }, [entity]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    
+    const form = e.currentTarget as HTMLFormElement;
+    const formData = new FormData(form);
+    const payload: any = {};
+
+    if (formData.has('name')) payload.name = formData.get('name');
+    if (formData.has('active')) payload.active = formData.get('active') === 'on' || formData.has('active');
+    else payload.active = false;
+
+    if (entity === 'users') {
+      payload.email = formData.get('email');
+      payload.groupId = formData.get('groupId') || null;
+      if (!editingItem) payload.password = formData.get('password');
+    }
+
+    if (entity === 'groups') {
+      payload.permissions = formData.getAll('permissions');
+    }
+
+    if (entity === 'criticalities') {
+      const level = formData.get('level');
+      if (level) payload.level = parseInt(level as string);
+      const slaDays = formData.get('slaDays');
+      if (slaDays) payload.slaDays = parseInt(slaDays as string);
+    }
+
+    if (entity === 'statuses') {
+      const order = formData.get('order');
+      if (order) payload.order = parseInt(order as string);
+      payload.isFinal = form.querySelector<HTMLInputElement>('input[name="isFinal"]')?.checked || false;
+    }
+
+    if (entity === 'taskTypes') {
+      payload.description = formData.get('description') || null;
+    }
+
+    try {
+      if (editingItem) {
+        const { error: updateError } = await supabase
+          .from(tableName)
+          .update(payload)
+          .eq('id', editingItem.id);
+        if (updateError) throw updateError;
+      } else {
+        const idTables = ['task_types', 'entry_methods', 'criticalities', 'sectors', 'statuses'];
+        if (idTables.includes(tableName)) {
+           payload.id = (payload.name as string).toLowerCase().trim()
+             .normalize('NFD').replace(/[\u0300-\u036f]/g, "")
+             .replace(/\s+/g, '-')
+             .replace(/[^\w-]/g, '');
+        }
+        
+        const { error: insertError } = await supabase
+          .from(tableName)
+          .insert([payload]);
+        if (insertError) throw insertError;
+      }
+
+      setIsModalOpen(false);
+      setEditingItem(null);
+      fetchData();
+    } catch (err: any) {
+      setError('Erro ao salvar: ' + (err.message || 'Verifique os campos.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
+    
+    setDeleting(true);
+    setError('');
+
+    try {
+      const { error: delError } = await supabase
+        .from(tableName)
+        .delete()
+        .eq('id', itemToDelete.id);
+
+      if (delError) {
+        if (delError.code === '23503') {
+          throw new Error('Este registro está em uso em outras tabelas e não pode ser removido.');
+        }
+        throw delError;
+      }
+
+      setItems(prev => prev.filter(item => item.id !== itemToDelete.id));
+      setItemToDelete(null);
+    } catch (err: any) {
+      alert('Falha na exclusão: ' + err.message);
+      setError(err.message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const renderField = (name: string, label: string, type: string = 'text', options?: { value: string, label: string }[]) => (
@@ -100,6 +179,7 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity }) => {
           className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-[#FF3D03] font-semibold transition-all"
           defaultValue={editingItem ? editingItem[name] : ''}
         >
+          <option value="">Selecione...</option>
           {options?.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
         </select>
       ) : type === 'checkbox' ? (
@@ -107,10 +187,10 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity }) => {
           <input 
             type="checkbox" 
             name={name} 
-            className="w-5 h-5 text-[#FF3D03] border-slate-300 rounded focus:ring-[#FF3D03]"
-            defaultChecked={editingItem ? editingItem[name] : true}
+            className="w-5 h-5 text-[#FF3D03] border-slate-300 rounded focus:ring-[#FF3D03] accent-[#FF3D03]"
+            defaultChecked={editingItem ? editingItem[name] : (name === 'active')}
           />
-          <span className="text-sm font-bold text-slate-700">{label === 'active' ? 'Registro Ativo' : label}</span>
+          <span className="text-sm font-bold text-slate-700">{label === 'Ativo' ? 'Habilitado' : label}</span>
         </label>
       ) : (
         <input 
@@ -118,83 +198,67 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity }) => {
           name={name} 
           className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-[#FF3D03] font-semibold transition-all"
           defaultValue={editingItem ? editingItem[name] : ''}
-          required={type !== 'textarea'}
+          required={type !== 'textarea' && name !== 'id' && name !== 'description'}
         />
       )}
     </div>
   );
 
-  const getEntityName = () => {
-    switch(entity) {
-      case 'taskTypes': return 'Tipo de Tarefa';
-      case 'sectors': return 'Setor';
-      case 'criticalities': return 'Criticidade';
-      case 'entryMethods': return 'Método de Entrada';
-      case 'users': return 'Usuário';
-      case 'groups': return 'Grupo de Acesso';
-      case 'statuses': return 'Status da Tarefa';
-      default: return '';
-    }
-  };
+  if (loading) return (
+    <div className="p-20 flex flex-col items-center justify-center text-slate-400 space-y-4">
+      <Loader2 className="animate-spin text-[#FF3D03]" size={40} />
+      <span className="font-black uppercase tracking-[0.3em] text-[10px]">Sincronizando...</span>
+    </div>
+  );
 
   return (
-    <div className="space-y-6 pb-12">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="relative flex-1 max-sm:w-full max-w-sm">
-          <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-          <input 
-            type="text" 
-            placeholder={`Filtrar ${getEntityName()}...`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#FF3D03] outline-none transition-all font-medium shadow-sm"
-          />
+    <div className="space-y-6">
+      {error && (
+        <div className="bg-red-50 text-red-600 p-4 rounded-2xl border border-red-100 flex items-center text-xs font-bold uppercase tracking-tight animate-shake">
+          <AlertCircle size={18} className="mr-3 shrink-0" /> {error}
         </div>
-        <button 
-          onClick={() => { setEditingItem(null); setIsModalOpen(true); }}
-          className="bg-[#FF3D03] hover:bg-[#E63602] text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center transition-all shadow-lg active:scale-95"
-        >
-          <Plus size={18} className="mr-2" /> Novo Registro
-        </button>
+      )}
+
+      <div className="flex justify-between items-center">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-4 top-3 text-slate-400" size={18} />
+          <input type="text" placeholder="Filtrar registros..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#FF3D03] outline-none shadow-sm" />
+        </div>
+        <button onClick={() => { setEditingItem(null); setIsModalOpen(true); setError(''); }} className="bg-[#FF3D03] text-white px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center shadow-lg hover:bg-[#E63602] transition-all"><Plus size={18} className="mr-2" /> Novo Registro</button>
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-400 tracking-widest">
             <tr>
-              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Identificação</th>
-              {entity === 'users' && <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">E-mail</th>}
-              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Situação</th>
-              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ações</th>
+              <th className="px-8 py-5">Identificação</th>
+              <th className="px-8 py-5 text-center">Situação</th>
+              <th className="px-8 py-5 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredItems.map(item => (
-              <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="px-8 py-5 font-bold text-slate-800 text-sm">{item.name || item.title}</td>
-                {entity === 'users' && <td className="px-8 py-5 text-slate-500 text-sm font-medium">{item.email}</td>}
+            {items.filter(i => (i.name || i.title || '').toLowerCase().includes(search.toLowerCase())).map(item => (
+              <tr key={item.id} className="hover:bg-slate-50/50 transition-all group">
+                <td className="px-8 py-5">
+                  <div className="font-bold text-slate-800">{item.name || item.title}</div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">{item.id}</div>
+                </td>
                 <td className="px-8 py-5 text-center">
-                  {item.active ? (
-                    <span className="inline-flex items-center px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase tracking-wider rounded-full border border-emerald-100">
-                      Ativo
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-3 py-1 bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-wider rounded-full border border-slate-200">
-                      Suspenso
-                    </span>
-                  )}
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${item.active ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+                    {item.active ? 'Ativo' : 'Inativo'}
+                  </span>
                 </td>
                 <td className="px-8 py-5 text-right">
                   <div className="flex justify-end space-x-2">
                     <button 
-                      onClick={() => { setEditingItem(item); setIsModalOpen(true); }}
-                      className="p-2 text-slate-400 hover:text-[#FF3D03] hover:bg-orange-50 rounded-xl transition-all"
+                      onClick={() => { setEditingItem(item); setIsModalOpen(true); setError(''); }} 
+                      className="p-2 text-slate-400 hover:text-[#FF3D03] transition-colors"
                     >
                       <Edit2 size={16} />
                     </button>
                     <button 
-                      onClick={() => setDeleteConfirm(item.id)}
-                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                      onClick={() => setItemToDelete(item)} 
+                      className="p-2 text-slate-400 hover:text-red-600 transition-colors"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -206,65 +270,94 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity }) => {
         </table>
       </div>
 
+      {/* MODAL DE EDIÇÃO/CRIAÇÃO */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
-            <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0">
-              <h3 className="text-lg font-black text-slate-800 uppercase tracking-widest">{editingItem ? 'Editar' : 'Criar'} {getEntityName()}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-800 p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20}/></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 border border-slate-200 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black uppercase tracking-widest text-slate-800">{editingItem ? 'Editar' : 'Criar'} Registro</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
             </div>
-            <form id="crud-form" onSubmit={handleSave} className="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+            
+            <form onSubmit={handleSave} className="space-y-6">
               {entity === 'users' ? (
                 <>
                   {renderField('name', 'Nome Completo')}
                   {renderField('email', 'E-mail Corporativo', 'email')}
-                  {!editingItem && renderField('password', 'Senha Temporária', 'password')}
+                  {!editingItem && renderField('password', 'Senha de Acesso', 'password')}
                   {renderField('groupId', 'Perfil de Acesso', 'select', groups.map(g => ({ value: g.id, label: g.name })))}
-                  {renderField('active', 'Status da Conta', 'checkbox')}
+                  {renderField('active', 'Ativo', 'checkbox')}
                 </>
               ) : entity === 'groups' ? (
                 <>
                   {renderField('name', 'Nome do Grupo')}
-                  {renderField('active', 'active', 'checkbox')}
-                  <div className="space-y-4 mt-6">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Atribuições de Acesso</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-6 border border-slate-100 rounded-3xl bg-slate-50/50">
-                      {Object.values(MenuKey).map(key => (
-                        <label key={key} className="flex items-center space-x-3 p-3 bg-white border border-slate-100 rounded-2xl hover:border-orange-200 hover:shadow-md cursor-pointer transition-all">
-                          <input 
-                            type="checkbox" 
-                            name="permissions" 
-                            value={key} 
-                            defaultChecked={editingItem?.permissions?.includes(key)}
-                            className="w-5 h-5 text-[#FF3D03] border-slate-300 rounded focus:ring-[#FF3D03]"
-                          />
-                          <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight">{MENU_LABELS[key]}</span>
-                        </label>
-                      ))}
-                    </div>
+                  {renderField('active', 'Ativo', 'checkbox')}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="col-span-2 text-[10px] font-black uppercase text-slate-400 mb-2">Permissões de Acesso</p>
+                    {Object.values(MenuKey).map(key => (
+                      <label key={key} className="flex items-center space-x-2 p-2 bg-white rounded-lg border border-slate-200 text-[10px] font-bold cursor-pointer hover:border-[#FF3D03]/30 transition-all">
+                         <input type="checkbox" name="permissions" value={key} defaultChecked={editingItem?.permissions?.includes(key)} className="accent-[#FF3D03]" />
+                         <span>{MENU_LABELS[key]}</span>
+                      </label>
+                    ))}
                   </div>
                 </>
               ) : (
                 <>
                   {renderField('name', 'Nome do Registro')}
-                  {renderField('active', 'active', 'checkbox')}
+                  {renderField('active', 'Ativo', 'checkbox')}
+                  {entity === 'criticalities' && (
+                    <>
+                      {renderField('level', 'Nível de Urgência (1-5)', 'number')}
+                      {renderField('slaDays', 'Dias para SLA', 'number')}
+                    </>
+                  )}
+                  {entity === 'statuses' && (
+                    <>
+                      {renderField('order', 'Ordem Numérica', 'number')}
+                      {renderField('isFinal', 'Status Finalizador?', 'checkbox')}
+                    </>
+                  )}
+                  {entity === 'taskTypes' && renderField('description', 'Descrição/Notas', 'textarea')}
                 </>
               )}
+
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 border border-slate-200 rounded-2xl font-black uppercase text-xs text-slate-400 hover:bg-slate-50 transition-colors">Cancelar</button>
+                <button type="submit" disabled={saving} className="flex-1 bg-[#FF3D03] text-white py-4 rounded-2xl font-black uppercase text-xs shadow-lg disabled:opacity-50 hover:bg-[#E63602] transition-all">
+                  {saving ? 'SALVANDO...' : 'CONFIRMAR E SALVAR'}
+                </button>
+              </div>
             </form>
-            <div className="p-8 border-t border-slate-50 flex gap-4 bg-slate-50/50">
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+          <div className="bg-white rounded-[32px] p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertTriangle size={40} />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">Excluir Registro?</h3>
+            <p className="text-sm text-slate-500 font-medium mb-8 leading-relaxed">
+              Você está prestes a remover <span className="font-bold text-slate-800">"{itemToDelete.name || itemToDelete.title}"</span>. Esta ação não pode ser desfeita.
+            </p>
+            <div className="space-y-3">
               <button 
-                type="button" 
-                onClick={() => setIsModalOpen(false)}
-                className="flex-1 px-6 py-4 border border-slate-300 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-white transition-colors"
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="w-full bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-red-200 hover:bg-red-700 transition-all flex items-center justify-center"
               >
-                Cancelar
+                {deleting ? <Loader2 size={18} className="animate-spin mr-2" /> : 'SIM, EXCLUIR AGORA'}
               </button>
               <button 
-                form="crud-form"
-                type="submit"
-                className="flex-1 px-6 py-4 bg-[#FF3D03] hover:bg-[#E63602] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-[#FF3D03]/20 transition-all active:scale-95"
+                onClick={() => setItemToDelete(null)}
+                disabled={deleting}
+                className="w-full bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all"
               >
-                Confirmar e Salvar
+                CANCELAR
               </button>
             </div>
           </div>
