@@ -8,7 +8,8 @@ import {
   Criticality, 
   EntryMethod, 
   TaskType, 
-  Company 
+  Company,
+  TaskStatus
 } from '../types';
 import { 
   ChevronLeft, 
@@ -58,6 +59,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [methods, setMethods] = useState<EntryMethod[]>([]);
   const [types, setTypes] = useState<TaskType[]>([]);
+  const [compStatuses, setCompStatuses] = useState<TaskStatus[]>([]);
   
   const [fetching, setFetching] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -69,13 +71,14 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
       try {
         const targetCompanies = user.companyIds && user.companyIds.length > 0 ? user.companyIds : [user.companyId];
         
-        const [u, crit, sec, m, t, comps] = await Promise.all([
+        const [u, crit, sec, m, t, comps, st] = await Promise.all([
           supabase.from('users').select('*').in('companyId', targetCompanies).eq('active', true),
-          supabase.from('criticalities').select('*').eq('active', true),
-          supabase.from('sectors').select('*').eq('active', true),
-          supabase.from('entry_methods').select('*').eq('active', true),
-          supabase.from('task_types').select('*').eq('active', true),
-          supabase.from('companies').select('*').in('id', targetCompanies)
+          supabase.from('criticalities').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`),
+          supabase.from('sectors').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`),
+          supabase.from('entry_methods').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`),
+          supabase.from('task_types').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`),
+          supabase.from('companies').select('*').in('id', targetCompanies),
+          supabase.from('statuses').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`).order('order', { ascending: true })
         ]);
         
         setUsers(u.data || []);
@@ -84,6 +87,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
         setMethods(m.data || []);
         setTypes(t.data || []);
         setAvailableCompanies(comps.data || []);
+        setCompStatuses(st.data || []);
 
         if (isEditMode) {
           const { data: task } = await supabase.from('tasks').select('*').eq('id', editId).single();
@@ -121,9 +125,16 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
         const { error: updateError } = await supabase.from('tasks').update(formData).eq('id', editId);
         if (updateError) throw updateError;
       } else {
+        // Localiza o status inicial (ordem 1) que contenha esta empresa na lista companyIds
+        const initialStatus = compStatuses.find(s => 
+          (s.companyIds?.includes(formData.companyId) || s.companyId === formData.companyId) && s.order === 1
+        ) || compStatuses[0];
+        
+        if (!initialStatus) throw new Error("A empresa não possui status configurados. Verifique as configurações de Administração.");
+
         const { error: insertError } = await supabase.from('tasks').insert([{
           ...formData,
-          statusId: 'st-open',
+          statusId: initialStatus.id,
           createdAt: new Date().toISOString()
         }]);
         if (insertError) throw insertError;
@@ -185,7 +196,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-8">
-          {/* Só exibe seleção de empresa se o usuário for MULTI-EMPRESA */}
           {isMultiCompanyUser && (
             <div className="md:col-span-3 p-6 bg-slate-50 border border-brand/20 rounded-3xl space-y-2">
               <label className="text-[10px] font-black text-brand uppercase tracking-widest block ml-1 flex items-center">

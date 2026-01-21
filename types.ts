@@ -89,6 +89,7 @@ export interface TaskStatus {
   isFinal: boolean;
   active: boolean;
   companyId: string;
+  companyIds?: string[];
 }
 
 export interface Task {

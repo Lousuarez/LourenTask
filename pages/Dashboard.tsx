@@ -57,9 +57,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         { data: crit }
       ] = await Promise.all([
         supabase.from('tasks').select('*').in('companyId', targetCompanies),
-        supabase.from('statuses').select('*').in('companyId', targetCompanies).order('order', { ascending: true }),
-        supabase.from('sectors').select('*').in('companyId', targetCompanies),
-        supabase.from('criticalities').select('*').in('companyId', targetCompanies)
+        supabase.from('statuses').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`).order('order', { ascending: true }),
+        supabase.from('sectors').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`),
+        supabase.from('criticalities').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`)
       ]);
 
       setTasks(t || []);
@@ -76,32 +76,32 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     const lastWeek = new Date();
     lastWeek.setDate(lastWeek.getDate() - 7);
     
-    // Identificação dinâmica de status por papel operacional
-    const openStatus = statuses.find(s => s.order === 1 || s.id === 'st-open');
-    const runningStatus = statuses.find(s => s.order === 2 || s.id === 'st-started');
-    const pausedStatus = statuses.find(s => s.order === 3 || s.id === 'st-paused');
+    // Identificação dinâmica por ordem (1: Aberto, 2: Iniciado, 3: Pausado)
+    const openStatus = statuses.find(s => s.order === 1);
+    const runningStatus = statuses.find(s => s.order === 2);
+    const pausedStatus = statuses.find(s => s.order === 3);
     const finalStatusIds = statuses.filter(s => s.isFinal).map(s => s.id);
 
     return {
       total: tasks.length,
-      open: tasks.filter(t => t.statusId === openStatus?.id || t.statusId === 'st-open').length,
-      running: tasks.filter(t => t.statusId === runningStatus?.id || t.statusId === 'st-started').length,
-      paused: tasks.filter(t => t.statusId === pausedStatus?.id || t.statusId === 'st-paused').length,
+      open: tasks.filter(t => t.statusId === openStatus?.id).length,
+      running: tasks.filter(t => t.statusId === runningStatus?.id).length,
+      paused: tasks.filter(t => t.statusId === pausedStatus?.id).length,
       concluded: tasks.filter(t => finalStatusIds.includes(t.statusId)).length,
       dueToday: tasks.filter(t => t.deadline.split('T')[0] === today && !finalStatusIds.includes(t.statusId)).length,
       overdue: tasks.filter(t => t.deadline.split('T')[0] < today && !finalStatusIds.includes(t.statusId)).length,
       weeklyFlow: tasks.filter(t => new Date(t.createdAt) >= lastWeek).length,
-      // Mapeamento de filtros para navegação
       filterIds: {
-        open: openStatus?.id || 'st-open',
-        running: runningStatus?.id || 'st-started',
-        paused: pausedStatus?.id || 'st-paused',
-        concluded: finalStatusIds[0] || 'st-finished'
+        open: openStatus?.id || 'all',
+        running: runningStatus?.id || 'all',
+        paused: pausedStatus?.id || 'all',
+        concluded: finalStatusIds[0] || 'all'
       }
     };
   }, [tasks, statuses]);
 
   const sectorData = useMemo(() => {
+    if (!sectors.length || !tasks.length) return [];
     return sectors.map(s => ({
       name: s.name,
       value: tasks.filter(t => t.sectorId === s.id).length,
@@ -110,6 +110,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   }, [sectors, tasks]);
 
   const criticalityData = useMemo(() => {
+    if (!criticalities.length) return [];
     return criticalities.sort((a,b) => a.level - b.level).map(c => ({
       name: c.name,
       value: tasks.filter(t => t.criticalityId === c.id).length,

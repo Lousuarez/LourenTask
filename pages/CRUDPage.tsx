@@ -61,7 +61,7 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [visibilityScope, setVisibilityScope] = useState<VisibilityScope>(VisibilityScope.ALL);
 
-  const isMultiCompanyUser = user.companyIds && user.companyIds.length > 1;
+  const canManageMultiCompany = user.companyId === 'admin' || (user.companyIds && user.companyIds.length > 0);
   const userMainCompanyId = user.companyIds?.[0] || user.companyId;
 
   const tableName = entity === 'taskTypes' ? 'task_types' : entity === 'entryMethods' ? 'entry_methods' : entity;
@@ -71,21 +71,28 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
     setError('');
     try {
       let query = supabase.from(tableName).select('*');
+      const userCos = user.companyIds && user.companyIds.length > 0 ? user.companyIds : [user.companyId];
       
-      const userCos = user.companyIds || [user.companyId];
-      
-      if (entity !== 'companies' && entity !== 'users' && entity !== 'groups') {
-        // Filtra apenas registros que pertencem às empresas do usuário
-        query = query.or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`);
-      } else if (entity === 'groups' || (entity === 'users' && user.companyId !== 'admin')) {
+      if (entity === 'companies') {
+        if (user.companyId !== 'admin') {
+          query = query.in('id', userCos);
+        }
+      } else if (entity === 'groups') {
         query = query.in('companyId', userCos);
+      } else {
+        // Status agora também suporta multi-empresa
+        query = query.or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`);
       }
       
       const { data, error: fetchError } = await query;
       if (fetchError) throw fetchError;
       setItems(data || []);
       
-      const { data: cData } = await supabase.from('companies').select('*').in('id', userCos);
+      let companiesQuery = supabase.from('companies').select('*');
+      if (user.companyId !== 'admin') {
+        companiesQuery = companiesQuery.in('id', userCos);
+      }
+      const { data: cData } = await companiesQuery;
       setCompanies(cData || []);
 
       if (entity === 'users') {
@@ -121,7 +128,6 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
     const formData = new FormData(form);
     const payload: any = {};
 
-    // Vinculação automática de empresa para mono-empresa
     if (entity !== 'companies') {
       payload.companyId = userMainCompanyId;
     }
@@ -130,16 +136,13 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
     if (formData.has('active')) payload.active = formData.get('active') === 'on';
     else if (entity !== 'companies') payload.active = false;
 
-    // Multi-vinculo de empresas (Só processa checkboxes se for multi-empresa)
-    const multiCompanyEntities = ['users', 'taskTypes', 'sectors', 'criticalities', 'entryMethods'];
+    // Tabelas que suportam o campo de array companyIds
+    const multiCompanyEntities = ['users', 'taskTypes', 'sectors', 'criticalities', 'entryMethods', 'statuses'];
     if (multiCompanyEntities.includes(entity)) {
-      if (isMultiCompanyUser) {
-        payload.companyIds = formData.getAll('companyIds');
-        if (payload.companyIds.length > 0) {
-          payload.companyId = payload.companyIds[0];
-        } else {
-          payload.companyIds = [userMainCompanyId];
-        }
+      const selectedCompanies = formData.getAll('companyIds') as string[];
+      if (selectedCompanies.length > 0) {
+        payload.companyIds = selectedCompanies;
+        payload.companyId = selectedCompanies[0];
       } else {
         payload.companyIds = [userMainCompanyId];
         payload.companyId = userMainCompanyId;
@@ -180,6 +183,7 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
       } else {
         const idTables = ['task_types', 'entry_methods', 'criticalities', 'sectors', 'statuses'];
         if (idTables.includes(tableName)) {
+           // Só gera ID baseado em nome se for novo e não for uma empresa
            payload.id = `${payload.companyId}-${(payload.name as string).toLowerCase().trim()
              .normalize('NFD').replace(/[\u0300-\u036f]/g, "")
              .replace(/\s+/g, '-')
@@ -255,27 +259,31 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
   };
 
   const renderCompanyVincule = () => {
-    if (!isMultiCompanyUser) return null; // Oculta se usuário for mono-empresa
-    
+    if (!canManageMultiCompany) return null;
     return (
       <div className="p-8 bg-slate-50 rounded-[32px] border border-slate-100 space-y-4">
-        <h4 className="text-[10px] font-black uppercase tracking-widest text-brand flex items-center">
-          <Building2 size={14} className="mr-2" /> Vínculo Unificado Multi-Empresa
-        </h4>
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight -mt-2">Indique em quais unidades este registro estará disponível para seleção.</p>
+        <div className="flex justify-between items-center">
+          <h4 className="text-[10px] font-black uppercase tracking-widest text-brand flex items-center">
+            <Building2 size={14} className="mr-2" /> Vínculo Unificado Multi-Empresa
+          </h4>
+          <span className="text-[9px] font-bold text-slate-400 uppercase">Selecione todas as unidades de destino</span>
+        </div>
         <div className="grid grid-cols-2 gap-3">
-          {companies.map(c => (
-            <label key={c.id} className="flex items-center space-x-3 p-4 bg-white border border-slate-200 rounded-2xl cursor-pointer hover:border-brand/20 transition-all">
-              <input 
-                type="checkbox" 
-                name="companyIds" 
-                value={c.id} 
-                defaultChecked={editingItem?.companyIds?.includes(c.id) || editingItem?.companyId === c.id} 
-                className="w-5 h-5 accent-brand" 
-              />
-              <span className="text-[10px] font-black text-slate-700 uppercase">{c.name}</span>
-            </label>
-          ))}
+          {companies.map(c => {
+            const isChecked = editingItem?.companyIds?.includes(c.id) || editingItem?.companyId === c.id;
+            return (
+              <label key={c.id} className="flex items-center space-x-3 p-4 bg-white border border-slate-200 rounded-2xl cursor-pointer hover:border-brand/20 transition-all">
+                <input 
+                  type="checkbox" 
+                  name="companyIds" 
+                  value={c.id} 
+                  defaultChecked={isChecked} 
+                  className="w-5 h-5 accent-brand" 
+                />
+                <span className="text-[10px] font-black text-slate-700 uppercase">{c.name}</span>
+              </label>
+            );
+          })}
         </div>
       </div>
     );
@@ -307,7 +315,7 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
           <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-400 tracking-widest">
             <tr>
               <th className="px-8 py-6">Identificação</th>
-              {isMultiCompanyUser && <th className="px-8 py-6">Vínculos</th>}
+              {canManageMultiCompany && <th className="px-8 py-6">Vínculos</th>}
               <th className="px-8 py-6 text-center">Situação</th>
               <th className="px-8 py-6 text-right">Ações</th>
             </tr>
@@ -319,7 +327,7 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
                   <div className="font-bold text-slate-800">{item.name || item.title || item.email}</div>
                   <div className="text-[10px] text-slate-400 font-mono mt-0.5 uppercase">{item.id}</div>
                 </td>
-                {isMultiCompanyUser && (
+                {canManageMultiCompany && (
                    <td className="px-8 py-6">
                       <span className="text-[9px] font-bold text-brand uppercase tracking-tight flex items-center">
                         <Building2 size={10} className="mr-1" />
@@ -429,7 +437,12 @@ const CRUDPage: React.FC<CRUDPageProps> = ({ entity, user }) => {
                       {renderField('slaDays', 'Dias Acordados (SLA)', 'number')}
                     </div>
                   )}
-                  {entity === 'statuses' && renderField('order', 'Ordem de Exibição', 'number')}
+                  {entity === 'statuses' && (
+                    <>
+                      {renderField('order', 'Ordem de Exibição', 'number')}
+                      {renderField('isFinal', 'Status Finalizador', 'checkbox')}
+                    </>
+                  )}
                 </>
               )}
 

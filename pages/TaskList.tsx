@@ -53,15 +53,15 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const userCos = user.companyIds || [user.companyId];
+      const userCos = user.companyIds && user.companyIds.length > 0 ? user.companyIds : [user.companyId];
       
       const [t, s, u, sec, crit, tt] = await Promise.all([
         supabase.from('tasks').select('*').in('companyId', userCos).order('createdAt', { ascending: false }),
-        supabase.from('statuses').select('*').in('companyId', userCos).order('order', { ascending: true }),
+        supabase.from('statuses').select('*').or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`).order('order', { ascending: true }),
         supabase.from('users').select('*').in('companyId', userCos),
-        supabase.from('sectors').select('*').in('companyId', userCos),
-        supabase.from('criticalities').select('*').in('companyId', userCos),
-        supabase.from('task_types').select('*').in('companyId', userCos)
+        supabase.from('sectors').select('*').or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`),
+        supabase.from('criticalities').select('*').or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`),
+        supabase.from('task_types').select('*').or(`companyId.in.(${userCos.join(',')}),companyIds.ov.{${userCos.join(',')}}`)
       ]);
       setTasks(t.data || []);
       setStatuses(s.data || []);
@@ -95,7 +95,6 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
     const todayISO = getTodayISO();
     const finishedIds = statuses.filter(s => s.isFinal).map(s => s.id);
     
-    // Suporte a filtros por IDs dinâmicos de status
     if (filter === 'all') { /* noop */ }
     else if (filter === 'st-delayed') result = result.filter(t => (t.deadline.split('T')[0] < todayISO && !finishedIds.includes(t.statusId)));
     else if (filter === 'today') result = result.filter(t => (t.deadline.split('T')[0] === todayISO && !finishedIds.includes(t.statusId)));
@@ -137,7 +136,6 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
     if (isDelayed) return <span className="px-3 py-1 bg-rose-100 text-rose-700 text-[10px] font-black uppercase rounded-full border border-rose-200">Fora do SLA</span>;
     if (isToday) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full animate-pulse shadow-lg shadow-brand/30">Vence Hoje</span>;
 
-    // Badge Dinâmica baseada no papel (ordem) do status
     if (status?.order === 1) return <span className="px-3 py-1 bg-orange-100 text-orange-700 text-[10px] font-black uppercase rounded-full border border-orange-200">{status.name}</span>;
     if (status?.order === 2) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full">{status.name}</span>;
     if (status?.order === 3) return <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase rounded-full border border-amber-200">{status.name}</span>;
@@ -146,11 +144,15 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
   };
 
   const renderActionButtons = (task: Task, isModal = false) => {
-    const currentStatus = statuses.find(s => s.id === task.statusId);
-    const openStatus = statuses.find(s => s.order === 1);
-    const runningStatus = statuses.find(s => s.order === 2);
-    const pausedStatus = statuses.find(s => s.order === 3);
-    const finalStatus = statuses.find(s => s.isFinal);
+    // Filtra status que o ID da empresa da tarefa faz parte da lista companyIds
+    const companyStatuses = statuses.filter(s => s.companyIds?.includes(task.companyId) || s.companyId === task.companyId);
+    const currentStatus = companyStatuses.find(s => s.id === task.statusId);
+    
+    // Mapeia por ordem nos status vinculados
+    const openStatus = companyStatuses.find(s => s.order === 1);
+    const runningStatus = companyStatuses.find(s => s.order === 2);
+    const pausedStatus = companyStatuses.find(s => s.order === 3);
+    const finalStatus = companyStatuses.find(s => s.isFinal);
 
     if (actionLoading === task.id) return <Loader2 size={18} className="animate-spin text-brand mx-auto" />;
 
