@@ -2,14 +2,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../db';
-// Fix: Added TaskType to imports from ../types
 import { Task, TaskStatus, User, Sector, Criticality, TaskType, MenuKey, TaskHistory, VisibilityScope } from '../types';
 import { 
   Search, 
   Play, 
   CheckCircle, 
   AlertCircle, 
-  // Fix: Added AlertTriangle to imports
   AlertTriangle,
   Eye, 
   RotateCcw,
@@ -23,7 +21,6 @@ import {
   User as UserIcon,
   Calendar,
   MessageSquare,
-  // Fix: Added Tag to imports
   Tag
 } from 'lucide-react';
 
@@ -43,7 +40,6 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [criticalities, setCriticalities] = useState<Criticality[]>([]);
-  // Fix: Added taskTypes state
   const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -57,15 +53,15 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const companyId = user.companyId;
-      // Fix: Added task_types fetch to the Promise.all
+      const userCos = user.companyIds || [user.companyId];
+      
       const [t, s, u, sec, crit, tt] = await Promise.all([
-        supabase.from('tasks').select('*').eq('companyId', companyId).order('createdAt', { ascending: false }),
-        supabase.from('statuses').select('*').eq('companyId', companyId).order('order', { ascending: true }),
-        supabase.from('users').select('*').eq('companyId', companyId),
-        supabase.from('sectors').select('*').eq('companyId', companyId),
-        supabase.from('criticalities').select('*').eq('companyId', companyId),
-        supabase.from('task_types').select('*').eq('companyId', companyId)
+        supabase.from('tasks').select('*').in('companyId', userCos).order('createdAt', { ascending: false }),
+        supabase.from('statuses').select('*').in('companyId', userCos).order('order', { ascending: true }),
+        supabase.from('users').select('*').in('companyId', userCos),
+        supabase.from('sectors').select('*').in('companyId', userCos),
+        supabase.from('criticalities').select('*').in('companyId', userCos),
+        supabase.from('task_types').select('*').in('companyId', userCos)
       ]);
       setTasks(t.data || []);
       setStatuses(s.data || []);
@@ -76,7 +72,7 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, [user.companyId]);
+  useEffect(() => { fetchData(); }, [user.companyId, user.companyIds]);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -99,12 +95,11 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
     const todayISO = getTodayISO();
     const finishedIds = statuses.filter(s => s.isFinal).map(s => s.id);
     
-    if (filter === 'st-open') result = result.filter(t => t.statusId === 'st-open');
-    if (filter === 'st-started') result = result.filter(t => t.statusId === 'st-started');
-    if (filter === 'st-paused') result = result.filter(t => t.statusId === 'st-paused');
-    if (filter === 'st-finished') result = result.filter(t => finishedIds.includes(t.statusId));
-    if (filter === 'st-delayed') result = result.filter(t => (t.deadline.split('T')[0] < todayISO && !finishedIds.includes(t.statusId)));
-    if (filter === 'today') result = result.filter(t => (t.deadline.split('T')[0] === todayISO && !finishedIds.includes(t.statusId)));
+    // Suporte a filtros por IDs dinâmicos de status
+    if (filter === 'all') { /* noop */ }
+    else if (filter === 'st-delayed') result = result.filter(t => (t.deadline.split('T')[0] < todayISO && !finishedIds.includes(t.statusId)));
+    else if (filter === 'today') result = result.filter(t => (t.deadline.split('T')[0] === todayISO && !finishedIds.includes(t.statusId)));
+    else result = result.filter(t => t.statusId === filter);
     
     if (search) {
       const s = search.toLowerCase();
@@ -142,25 +137,26 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
     if (isDelayed) return <span className="px-3 py-1 bg-rose-100 text-rose-700 text-[10px] font-black uppercase rounded-full border border-rose-200">Fora do SLA</span>;
     if (isToday) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full animate-pulse shadow-lg shadow-brand/30">Vence Hoje</span>;
 
-    switch(task.statusId) {
-      case 'st-open': return <span className="px-3 py-1 bg-orange-100 text-orange-700 text-[10px] font-black uppercase rounded-full border border-orange-200">Em Aberto</span>;
-      case 'st-started': return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full">Executando</span>;
-      case 'st-paused': return <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase rounded-full border border-amber-200">Pausada</span>;
-      default: return <span className="px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-black uppercase rounded-full border border-slate-200">{status?.name || 'Pendente'}</span>;
-    }
+    // Badge Dinâmica baseada no papel (ordem) do status
+    if (status?.order === 1) return <span className="px-3 py-1 bg-orange-100 text-orange-700 text-[10px] font-black uppercase rounded-full border border-orange-200">{status.name}</span>;
+    if (status?.order === 2) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full">{status.name}</span>;
+    if (status?.order === 3) return <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase rounded-full border border-amber-200">{status.name}</span>;
+    
+    return <span className="px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-black uppercase rounded-full border border-slate-200">{status?.name || 'Pendente'}</span>;
   };
 
   const renderActionButtons = (task: Task, isModal = false) => {
-    const isFinal = statuses.find(s => s.id === task.statusId)?.isFinal;
-    const isStarted = task.statusId === 'st-started';
-    const isOpen = task.statusId === 'st-open';
-    const isPaused = task.statusId === 'st-paused';
+    const currentStatus = statuses.find(s => s.id === task.statusId);
+    const openStatus = statuses.find(s => s.order === 1);
+    const runningStatus = statuses.find(s => s.order === 2);
+    const pausedStatus = statuses.find(s => s.order === 3);
+    const finalStatus = statuses.find(s => s.isFinal);
 
     if (actionLoading === task.id) return <Loader2 size={18} className="animate-spin text-brand mx-auto" />;
 
-    if (isFinal) {
+    if (currentStatus?.isFinal) {
       return (
-        <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, 'st-open'); }} className={`flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest transition-all ${isModal ? 'flex-1 py-4 bg-brand text-white rounded-2xl' : 'px-4 py-2 bg-white text-brand border border-slate-100 rounded-xl hover:bg-brand hover:text-white'}`}>
+        <button onClick={(e) => { e.stopPropagation(); if (openStatus) updateTaskStatus(task.id, openStatus.id); }} className={`flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest transition-all ${isModal ? 'flex-1 py-4 bg-brand text-white rounded-2xl' : 'px-4 py-2 bg-white text-brand border border-slate-100 rounded-xl hover:bg-brand hover:text-white'}`}>
           <RotateCcw size={14} /> Reabrir
         </button>
       );
@@ -168,19 +164,23 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
 
     return (
       <div className={`flex items-center gap-2 ${isModal ? 'w-full' : ''}`}>
-        {(isOpen || isPaused) && (
-          <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, 'st-started'); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-brand text-white rounded-xl shadow-lg shadow-brand/20 hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
+        {(currentStatus?.order === 1 || currentStatus?.order === 3) && runningStatus && (
+          <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, runningStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-brand text-white rounded-xl shadow-lg shadow-brand/20 hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
             <Play size={14} fill="currentColor" /> Iniciar
           </button>
         )}
-        {isStarted && (
+        {currentStatus?.order === 2 && (
           <>
-            <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, 'st-paused'); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-amber-500 text-white rounded-xl hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
-              <Pause size={14} fill="currentColor" /> Pausar
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, 'st-finished'); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-emerald-600 text-white rounded-xl hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
-              <CheckCircle size={14} /> Concluir
-            </button>
+            {pausedStatus && (
+              <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, pausedStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-amber-500 text-white rounded-xl hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
+                <Pause size={14} fill="currentColor" /> Pausar
+              </button>
+            )}
+            {finalStatus && (
+              <button onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, finalStatus.id); }} className={`flex-1 flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest bg-emerald-600 text-white rounded-xl hover:brightness-110 transition-all ${isModal ? 'py-4' : 'px-4 py-2'}`}>
+                <CheckCircle size={14} /> Concluir
+              </button>
+            )}
           </>
         )}
       </div>
@@ -189,7 +189,6 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* HEADER E BUSCA */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Painel de <span className="text-brand">Demandas</span></h2>
@@ -206,7 +205,6 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
         </div>
       </div>
 
-      {/* TABELA PREMIUM */}
       <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
         <table className="w-full text-left min-w-[1000px] border-collapse">
           <thead className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -241,7 +239,6 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
                   <div className="flex justify-center">{getStatusBadge(task)}</div>
                 </td>
                 <td className="px-10 py-6 text-right relative">
-                   {/* TOOLTIP DE AÇÕES FLUTUANTES NO HOVER */}
                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                       {renderActionButtons(task)}
                       <button onClick={(e) => { e.stopPropagation(); navigate(`/tarefas/editar/${task.id}`); }} className="p-2.5 bg-white text-slate-400 border border-slate-100 rounded-xl hover:text-brand hover:border-brand/20 transition-all shadow-sm">
@@ -263,7 +260,6 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
         )}
       </div>
 
-      {/* MODAL DE DETALHES E HISTÓRICO */}
       {selectedTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white rounded-[48px] shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-hidden flex flex-col border border-slate-100">
@@ -281,11 +277,9 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
                   <div className="flex flex-wrap gap-3">
                     {getStatusBadge(selectedTask)}
                     <span className="px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-black uppercase rounded-full flex items-center">
-                      {/* Fix: taskTypes and Tag now available */}
                       <Tag size={12} className="mr-1.5" /> {taskTypes.find(t => t.id === selectedTask.taskTypeId)?.name}
                     </span>
                     <span className="px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-black uppercase rounded-full flex items-center">
-                      {/* Fix: AlertTriangle now available */}
                       <AlertTriangle size={12} className="mr-1.5" /> {criticalities.find(c => c.id === selectedTask.criticalityId)?.name}
                     </span>
                   </div>
@@ -311,7 +305,6 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
                   </div>
                 </div>
 
-                {/* TIMELINE DE HISTÓRICO */}
                 <div className="space-y-6 pt-4">
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center">
                       <Clock size={14} className="mr-2" /> Rastreabilidade (Histórico)
@@ -326,11 +319,11 @@ const TaskList: React.FC<TaskListProps> = ({ permissions = [], user }) => {
                                     <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
                                       <div className="flex justify-between items-start mb-1">
                                         <p className="text-[10px] font-black text-slate-800 uppercase">
-                                          Alteração para {statuses.find(s => s.id === h.newStatusId)?.name}
+                                          Alteração para {statuses.find(s => s.id === h.newStatusId)?.name || 'Status Atualizado'}
                                         </p>
                                         <span className="text-[9px] font-bold text-slate-400">{new Date(h.timestamp).toLocaleString('pt-BR')}</span>
                                       </div>
-                                      <p className="text-[10px] font-bold text-slate-400">Ação executada por <span className="text-brand">{users.find(u => u.id === h.changedById)?.name || 'Sistema'}</span></p>
+                                      <p className="text-[10px] font-bold text-slate-400">Ação executada por <span className="text-brand font-black">{users.find(u => u.id === h.changedById)?.name || 'Sistema'}</span></p>
                                     </div>
                                 </div>
                             ))}

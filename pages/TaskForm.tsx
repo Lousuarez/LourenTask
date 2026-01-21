@@ -35,6 +35,9 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
   const navigate = useNavigate();
   const { id: editId } = useParams();
   const isEditMode = !!editId;
+
+  const isMultiCompanyUser = user.companyIds && user.companyIds.length > 1;
+  const userMainCompanyId = user.companyIds?.[0] || user.companyId;
   
   const [formData, setFormData] = useState({ 
     title: '', 
@@ -46,7 +49,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
     taskTypeId: '', 
     solicitor: '', 
     observations: '',
-    companyId: user.companyId
+    companyId: userMainCompanyId
   });
   
   const [availableCompanies, setAvailableCompanies] = useState<Company[]>([]);
@@ -133,7 +136,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
     }
   };
 
-  // Funções de filtragem dinâmica baseada na empresa do formulário
   const filterByCompany = (items: any[]) => {
     return items.filter(item => 
       item.companyId === formData.companyId || 
@@ -183,7 +185,8 @@ const TaskForm: React.FC<TaskFormProps> = ({ user }) => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-8">
-          {availableCompanies.length > 1 && (
+          {/* Só exibe seleção de empresa se o usuário for MULTI-EMPRESA */}
+          {isMultiCompanyUser && (
             <div className="md:col-span-3 p-6 bg-slate-50 border border-brand/20 rounded-3xl space-y-2">
               <label className="text-[10px] font-black text-brand uppercase tracking-widest block ml-1 flex items-center">
                 <Building2 size={12} className="mr-2" /> Unidade de Destino *

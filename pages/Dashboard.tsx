@@ -57,7 +57,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         { data: crit }
       ] = await Promise.all([
         supabase.from('tasks').select('*').in('companyId', targetCompanies),
-        supabase.from('statuses').select('*').in('companyId', targetCompanies),
+        supabase.from('statuses').select('*').in('companyId', targetCompanies).order('order', { ascending: true }),
         supabase.from('sectors').select('*').in('companyId', targetCompanies),
         supabase.from('criticalities').select('*').in('companyId', targetCompanies)
       ]);
@@ -75,17 +75,29 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     const today = new Date().toISOString().split('T')[0];
     const lastWeek = new Date();
     lastWeek.setDate(lastWeek.getDate() - 7);
+    
+    // Identificação dinâmica de status por papel operacional
+    const openStatus = statuses.find(s => s.order === 1 || s.id === 'st-open');
+    const runningStatus = statuses.find(s => s.order === 2 || s.id === 'st-started');
+    const pausedStatus = statuses.find(s => s.order === 3 || s.id === 'st-paused');
     const finalStatusIds = statuses.filter(s => s.isFinal).map(s => s.id);
 
     return {
       total: tasks.length,
-      open: tasks.filter(t => t.statusId === 'st-open').length,
-      running: tasks.filter(t => t.statusId === 'st-started').length,
-      paused: tasks.filter(t => t.statusId === 'st-paused').length,
+      open: tasks.filter(t => t.statusId === openStatus?.id || t.statusId === 'st-open').length,
+      running: tasks.filter(t => t.statusId === runningStatus?.id || t.statusId === 'st-started').length,
+      paused: tasks.filter(t => t.statusId === pausedStatus?.id || t.statusId === 'st-paused').length,
       concluded: tasks.filter(t => finalStatusIds.includes(t.statusId)).length,
       dueToday: tasks.filter(t => t.deadline.split('T')[0] === today && !finalStatusIds.includes(t.statusId)).length,
       overdue: tasks.filter(t => t.deadline.split('T')[0] < today && !finalStatusIds.includes(t.statusId)).length,
-      weeklyFlow: tasks.filter(t => new Date(t.createdAt) >= lastWeek).length
+      weeklyFlow: tasks.filter(t => new Date(t.createdAt) >= lastWeek).length,
+      // Mapeamento de filtros para navegação
+      filterIds: {
+        open: openStatus?.id || 'st-open',
+        running: runningStatus?.id || 'st-started',
+        paused: pausedStatus?.id || 'st-paused',
+        concluded: finalStatusIds[0] || 'st-finished'
+      }
     };
   }, [tasks, statuses]);
 
@@ -170,12 +182,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       <div ref={dashboardRef} className="space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-          {kpiCard(ClipboardList, "Em Aberto", metrics.open, "text-orange-500", "bg-orange-50", "st-open")}
-          {kpiCard(Clock, "Em Execução", metrics.running, "text-brand", "bg-brand/5", "st-started")}
-          {kpiCard(PauseCircle, "Pausadas", metrics.paused, "text-amber-500", "bg-amber-50", "st-paused")}
+          {kpiCard(ClipboardList, "Em Aberto", metrics.open, "text-orange-500", "bg-orange-50", metrics.filterIds.open)}
+          {kpiCard(Clock, "Em Execução", metrics.running, "text-brand", "bg-brand/5", metrics.filterIds.running)}
+          {kpiCard(PauseCircle, "Pausadas", metrics.paused, "text-amber-500", "bg-amber-50", metrics.filterIds.paused)}
           {kpiCard(AlertCircle, "Fora do SLA", metrics.overdue, "text-rose-500", "bg-rose-50", "st-delayed")}
           
-          {kpiCard(CheckCircle, "Concluídas", metrics.concluded, "text-emerald-500", "bg-emerald-50", "st-finished")}
+          {kpiCard(CheckCircle, "Concluídas", metrics.concluded, "text-emerald-500", "bg-emerald-50", metrics.filterIds.concluded)}
           {kpiCard(Calendar, "Vencem Hoje", metrics.dueToday, "text-orange-600", "bg-orange-100/50", "today")}
           {kpiCard(TrendingUp, "Fluxo Semanal", metrics.weeklyFlow, "text-blue-500", "bg-blue-50", "all")}
           {kpiCard(Layers, "Volume Total", metrics.total, "text-slate-500", "bg-slate-100", "all")}
