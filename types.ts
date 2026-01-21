@@ -13,6 +13,12 @@ export enum MenuKey {
   CONFIG_STATUS = 'CONFIG_STATUS'
 }
 
+export enum VisibilityScope {
+  ALL = 'ALL',
+  OWN = 'OWN',
+  SECTOR = 'SECTOR'
+}
+
 export interface AccessGroup {
   id: string;
   name: string;
@@ -26,6 +32,8 @@ export interface User {
   password?: string;
   active: boolean;
   groupId: string;
+  visibilityScope?: VisibilityScope;
+  visibleSectorIds?: string[];
 }
 
 export interface TaskType {

@@ -6,7 +6,7 @@ import {
   PieChart, Pie, Cell, Legend 
 } from 'recharts';
 import { supabase } from '../db';
-import { Task, TaskStatus, Sector, Criticality, User } from '../types';
+import { Task, TaskStatus, Sector, Criticality, User, VisibilityScope } from '../types';
 import { 
   ClipboardList, 
   Clock, 
@@ -20,9 +20,13 @@ import {
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 
+interface DashboardProps {
+  user?: User | null;
+}
+
 const COLORS = ['#FF3D03', '#FF7F50', '#FFB347', '#D2691E', '#FF4500', '#A0522D'];
 
-const Dashboard: React.FC = () => {
+const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const navigate = useNavigate();
   const dashboardRef = useRef<HTMLDivElement>(null);
   
@@ -30,7 +34,6 @@ const Dashboard: React.FC = () => {
   const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [criticalities, setCriticalities] = useState<Criticality[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,32 +42,40 @@ const Dashboard: React.FC = () => {
         { data: t }, 
         { data: s }, 
         { data: sec }, 
-        { data: crit }, 
-        { data: u }
+        { data: crit }
       ] = await Promise.all([
         supabase.from('tasks').select('*'),
         supabase.from('statuses').select('*'),
         supabase.from('sectors').select('*'),
-        supabase.from('criticalities').select('*'),
-        supabase.from('users').select('*')
+        supabase.from('criticalities').select('*')
       ]);
 
       setTasks(t || []);
       setStatuses(s || []);
       setSectors(sec || []);
       setCriticalities(crit || []);
-      setUsers(u || []);
       setLoading(false);
     };
     fetchData();
   }, []);
 
+  const visibleTasks = useMemo(() => {
+    let result = [...tasks];
+    if (user) {
+      if (user.visibilityScope === VisibilityScope.OWN) {
+        result = result.filter(t => t.responsibleId === user.id);
+      } else if (user.visibilityScope === VisibilityScope.SECTOR) {
+        const allowedSectors = user.visibleSectorIds || [];
+        result = result.filter(t => allowedSectors.includes(t.sectorId) || t.responsibleId === user.id);
+      }
+    }
+    return result;
+  }, [tasks, user]);
+
   const metrics = useMemo(() => {
-    // Helper para data local YYYY-MM-DD
     const d = new Date();
     const todayISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     
-    // Calcula limite da semana
     const nextWeekDate = new Date();
     nextWeekDate.setDate(d.getDate() + 7);
     const nextWeekISO = `${nextWeekDate.getFullYear()}-${String(nextWeekDate.getMonth() + 1).padStart(2, '0')}-${String(nextWeekDate.getDate()).padStart(2, '0')}`;
@@ -72,42 +83,40 @@ const Dashboard: React.FC = () => {
     const finishedIds = statuses.filter(s => s.isFinal).map(s => s.id);
 
     const counts = {
-      open: tasks.filter(t => t.statusId === 'st-open').length,
-      started: tasks.filter(t => t.statusId === 'st-started').length,
-      paused: tasks.filter(t => t.statusId === 'st-paused').length,
-      delayed: tasks.filter(t => {
+      open: visibleTasks.filter(t => t.statusId === 'st-open').length,
+      started: visibleTasks.filter(t => t.statusId === 'st-started').length,
+      paused: visibleTasks.filter(t => t.statusId === 'st-paused').length,
+      delayed: visibleTasks.filter(t => {
         const deadlineISO = t.deadline.split('T')[0];
         return deadlineISO < todayISO && !finishedIds.includes(t.statusId);
       }).length,
-      finished: tasks.filter(t => finishedIds.includes(t.statusId)).length,
-      total: tasks.length,
-      today: tasks.filter(t => {
+      finished: visibleTasks.filter(t => finishedIds.includes(t.statusId)).length,
+      total: visibleTasks.length,
+      today: visibleTasks.filter(t => {
         const deadlineISO = t.deadline.split('T')[0];
-        // Conta apenas se for hoje e NÃO estiver finalizada
         return deadlineISO === todayISO && !finishedIds.includes(t.statusId);
       }).length,
-      week: tasks.filter(t => {
+      week: visibleTasks.filter(t => {
         const deadlineISO = t.deadline.split('T')[0];
-        // Conta se for entre amanhã e os próximos 7 dias e NÃO estiver finalizada
         return deadlineISO > todayISO && deadlineISO <= nextWeekISO && !finishedIds.includes(t.statusId);
       }).length
     };
     return counts;
-  }, [tasks, statuses]);
+  }, [visibleTasks, statuses]);
 
   const tasksBySector = useMemo(() => {
     return sectors.map(sec => ({
       name: sec.name,
-      value: tasks.filter(t => t.sectorId === sec.id).length
+      value: visibleTasks.filter(t => t.sectorId === sec.id).length
     })).filter(d => d.value > 0);
-  }, [tasks, sectors]);
+  }, [visibleTasks, sectors]);
 
   const tasksByCriticality = useMemo(() => {
     return criticalities.map(crit => ({
       name: crit.name,
-      count: tasks.filter(t => t.criticalityId === crit.id).length
+      count: visibleTasks.filter(t => t.criticalityId === crit.id).length
     }));
-  }, [tasks, criticalities]);
+  }, [visibleTasks, criticalities]);
 
   const cards = [
     { label: 'Em aberto', value: metrics.open, icon: ClipboardList, color: 'text-orange-600', bg: 'bg-orange-50', filter: 'st-open' },
@@ -145,7 +154,9 @@ const Dashboard: React.FC = () => {
       <div className="flex justify-between items-end">
          <div>
             <h1 className="text-4xl font-black text-slate-950 tracking-tight">Painel <span className="text-[#FF3D03]">Gerencial</span></h1>
-            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mt-2">Métricas Supabase em Tempo Real</p>
+            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mt-2">
+              Métricas {user?.visibilityScope !== VisibilityScope.ALL ? 'Filtradas por Perfil' : 'Gerais do Sistema'}
+            </p>
          </div>
          <button 
            onClick={handleExport}

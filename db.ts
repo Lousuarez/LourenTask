@@ -1,8 +1,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://xlyftfogfxupaeouynez.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_R2pJVAaHKHLqHbk0EF6LlA_Fi0C3N6v';
+// As variáveis de ambiente devem ser configuradas no provedor de hospedagem (Hostinger)
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xlyftfogfxupaeouynez.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_R2pJVAaHKHLqHbk0EF6LlA_Fi0C3N6v';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 

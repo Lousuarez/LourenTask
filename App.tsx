@@ -66,7 +66,7 @@ const App: React.FC = () => {
     <Router>
       <Layout user={currentUser} permissions={userPermissions} onLogout={handleLogout}>
         <Routes>
-          <Route path="/" element={canAccess(MenuKey.DASHBOARD) ? <Dashboard /> : <Navigate to="/tarefas" />} />
+          <Route path="/" element={canAccess(MenuKey.DASHBOARD) ? <Dashboard user={currentUser} /> : <Navigate to="/tarefas" />} />
           <Route path="/tarefas" element={canAccess(MenuKey.TASKS_LIST) ? <TaskList permissions={userPermissions} user={currentUser} /> : <Navigate to="/" />} />
           <Route path="/tarefas/nova" element={canAccess(MenuKey.TASKS_CREATE) ? <TaskForm /> : <Navigate to="/tarefas" />} />
           <Route path="/tarefas/editar/:id" element={canAccess(MenuKey.TASKS_EDIT) ? <TaskForm /> : <Navigate to="/tarefas" />} />
