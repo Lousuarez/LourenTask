@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../db';
-import { User, Task, TaskStatus, Sector, Criticality } from '../types';
+import { User, Task, TaskStatus, Sector, Criticality, TaskType } from '../types';
 import { toPng } from 'html-to-image';
 import { 
   ClipboardList, 
@@ -15,7 +15,10 @@ import {
   Layers,
   Zap,
   Download,
-  Loader2
+  Loader2,
+  Activity,
+  BarChart3,
+  Timer
 } from 'lucide-react';
 import { 
   PieChart, 
@@ -27,7 +30,10 @@ import {
   XAxis, 
   YAxis, 
   CartesianGrid, 
-  Tooltip
+  Tooltip,
+  AreaChart,
+  Area,
+  Legend
 } from 'recharts';
 
 interface DashboardProps {
@@ -41,10 +47,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [criticalities, setCriticalities] = useState<Criticality[]>([]);
+  const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  const colors = ['#FF3D03', '#FF6B3D', '#B32D00', '#FF8F66', '#FFB399', '#CC3300'];
+  const colors = ['#FF3D03', '#FF6B3D', '#B32D00', '#FF8F66', '#FFB399', '#CC3300', '#2dd4bf', '#3b82f6'];
 
   useEffect(() => {
     const fetchData = async () => {
@@ -54,18 +61,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         { data: t }, 
         { data: s }, 
         { data: sec }, 
-        { data: crit }
+        { data: crit },
+        { data: tt }
       ] = await Promise.all([
         supabase.from('tasks').select('*').in('companyId', targetCompanies),
         supabase.from('statuses').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`).order('order', { ascending: true }),
         supabase.from('sectors').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`),
-        supabase.from('criticalities').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`)
+        supabase.from('criticalities').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`),
+        supabase.from('task_types').select('*').or(`companyId.in.(${targetCompanies.join(',')}),companyIds.ov.{${targetCompanies.join(',')}}`)
       ]);
 
       setTasks(t || []);
       setStatuses(s || []);
       setSectors(sec || []);
       setCriticalities(crit || []);
+      setTaskTypes(tt || []);
       setLoading(false);
     };
     fetchData();
@@ -76,7 +86,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     const lastWeek = new Date();
     lastWeek.setDate(lastWeek.getDate() - 7);
     
-    // Identificação dinâmica por ordem (1: Aberto, 2: Iniciado, 3: Pausado)
     const openStatus = statuses.find(s => s.order === 1);
     const runningStatus = statuses.find(s => s.order === 2);
     const pausedStatus = statuses.find(s => s.order === 3);
@@ -105,7 +114,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return sectors.map(s => ({
       name: s.name,
       value: tasks.filter(t => t.sectorId === s.id).length,
-      id: s.id
     })).filter(d => d.value > 0);
   }, [sectors, tasks]);
 
@@ -114,9 +122,46 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return criticalities.sort((a,b) => a.level - b.level).map(c => ({
       name: c.name,
       value: tasks.filter(t => t.criticalityId === c.id).length,
-      id: c.id
     }));
   }, [criticalities, tasks]);
+
+  // ANÁLISE POR TIPO DE TAREFA
+  const taskTypeData = useMemo(() => {
+    if (!taskTypes.length) return [];
+    return taskTypes.map(tt => ({
+      name: tt.name,
+      value: tasks.filter(t => t.taskTypeId === tt.id).length,
+    })).filter(d => d.value > 0).sort((a,b) => b.value - a.value);
+  }, [taskTypes, tasks]);
+
+  // ANÁLISE DE SLA
+  const slaData = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const finalStatusIds = statuses.filter(s => s.isFinal).map(s => s.id);
+    const withinSla = tasks.filter(t => t.deadline.split('T')[0] >= today || finalStatusIds.includes(t.statusId)).length;
+    const expired = tasks.filter(t => t.deadline.split('T')[0] < today && !finalStatusIds.includes(t.statusId)).length;
+    
+    return [
+      { name: 'Dentro do Prazo', value: withinSla, color: '#10b981' },
+      { name: 'SLA Expirado', value: expired, color: '#ef4444' }
+    ].filter(d => d.value > 0);
+  }, [tasks, statuses]);
+
+  // TENDÊNCIA TEMPORAL (Últimos 15 dias)
+  const timelineData = useMemo(() => {
+    const dates = [];
+    for (let i = 14; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const count = tasks.filter(t => t.createdAt.split('T')[0] === dateStr).length;
+      dates.push({
+        date: new Date(dateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+        "Demandas": count
+      });
+    }
+    return dates;
+  }, [tasks]);
 
   const handleExport = async () => {
     if (!dashboardRef.current) return;
@@ -128,7 +173,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         style: { padding: '20px' }
       });
       const link = document.createElement('a');
-      link.download = `Relatorio-LT-${new Date().getTime()}.png`;
+      link.download = `Painel-BI-LT-${new Date().getTime()}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
@@ -165,11 +210,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-10">
+    <div className="space-y-8 animate-in fade-in duration-700 pb-20">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Visão <span className="text-brand">Estratégica</span></h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Métricas consolidadas de operação</p>
+          <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Business <span className="text-brand">Intelligence</span></h2>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Análise de performance e volumetria</p>
         </div>
         <button 
           onClick={handleExport}
@@ -177,11 +222,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           className="bg-white border border-slate-200 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-sm hover:bg-slate-50 transition-all text-slate-600 disabled:opacity-50"
         >
           {exporting ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Download size={16} className="mr-2" />}
-          {exporting ? 'Gerando...' : 'Gerar Relatório'}
+          {exporting ? 'Compilando...' : 'Exportar Dashboard'}
         </button>
       </div>
 
       <div ref={dashboardRef} className="space-y-8">
+        {/* KPI ROW */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {kpiCard(ClipboardList, "Em Aberto", metrics.open, "text-orange-500", "bg-orange-50", metrics.filterIds.open)}
           {kpiCard(Clock, "Em Execução", metrics.running, "text-brand", "bg-brand/5", metrics.filterIds.running)}
@@ -194,42 +240,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           {kpiCard(Layers, "Volume Total", metrics.total, "text-slate-500", "bg-slate-100", "all")}
         </div>
 
+        {/* ROW 1: Setores e Criticidades (EXISTENTES) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-5 bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm relative overflow-hidden group">
             <div className="absolute top-10 right-10 opacity-5 group-hover:opacity-10 transition-opacity">
-               <Zap size={120} />
+               <Activity size={120} />
             </div>
             <div className="flex items-center space-x-3 mb-10">
               <div className="w-1.5 h-6 bg-brand rounded-full"></div>
               <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Volume por Setor</h3>
             </div>
-            
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={sectorData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={80}
-                    outerRadius={120}
-                    paddingAngle={5}
-                    dataKey="value"
-                    onClick={(data) => handleNavigateFilter('all')}
-                    className="cursor-pointer"
-                  >
+                  <Pie data={sectorData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={5} dataKey="value" stroke="none">
                     {sectorData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={colors[index % colors.length]} className="hover:opacity-80 transition-opacity" />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                    itemStyle={{ fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}
-                  />
+                  <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} itemStyle={{ fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            
             <div className="flex flex-wrap justify-center gap-4 mt-6">
               {sectorData.map((s, idx) => (
                 <div key={s.name} className="flex items-center space-x-2">
@@ -245,39 +277,97 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               <div className="w-1.5 h-6 bg-brand rounded-full"></div>
               <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Distribuição por Criticidade</h3>
             </div>
-
             <div className="h-[380px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={criticalityData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }} 
-                    dy={10}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }} 
-                  />
-                  <Tooltip 
-                    cursor={{ fill: '#f8fafc' }}
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Bar 
-                    dataKey="value" 
-                    fill="#FF3D03" 
-                    radius={[8, 8, 0, 0]} 
-                    barSize={40}
-                    onClick={() => handleNavigateFilter('all')}
-                    className="cursor-pointer hover:brightness-110 transition-all"
-                  />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }} />
+                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                  <Bar dataKey="value" fill="#FF3D03" radius={[8, 8, 0, 0]} barSize={40} className="hover:brightness-110 transition-all" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
+        </div>
+
+        {/* ROW 2: NOVOS GRÁFICOS (TIPOS E SLA) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="lg:col-span-8 bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
+            <div className="flex items-center space-x-3 mb-10">
+              <div className="w-1.5 h-6 bg-brand rounded-full"></div>
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Rank de Tipos de Tarefa</h3>
+            </div>
+            <div className="h-[400px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={taskTypeData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: '900', fill: '#475569', textTransform: 'uppercase' }} width={120} />
+                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '16px', border: 'none' }} />
+                  <Bar dataKey="value" fill="#1e293b" radius={[0, 8, 8, 0]} barSize={25} label={{ position: 'right', fill: '#94a3b8', fontSize: 10, fontWeight: 'bold' }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="lg:col-span-4 bg-slate-900 p-10 rounded-[40px] border border-white/5 shadow-2xl relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-10 opacity-10 group-hover:scale-110 transition-transform">
+              <Timer size={100} color="white" />
+            </div>
+            <div className="flex items-center space-x-3 mb-10">
+              <div className="w-1.5 h-6 bg-brand rounded-full"></div>
+              <h3 className="text-sm font-black uppercase tracking-widest text-white">Performance de SLA</h3>
+            </div>
+            <div className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={slaData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={8} dataKey="value" stroke="none">
+                    {slaData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{ borderRadius: '16px', border: 'none' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-8 space-y-4">
+               {slaData.map(item => (
+                 <div key={item.name} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></div>
+                      <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{item.name}</span>
+                    </div>
+                    <span className="text-lg font-black text-white">{item.value}</span>
+                 </div>
+               ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ROW 3: LINHA DO TEMPO / EVOLUÇÃO */}
+        <div className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
+           <div className="flex items-center space-x-3 mb-10">
+              <div className="w-1.5 h-6 bg-brand rounded-full"></div>
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Evolução de Novas Demandas (15 dias)</h3>
+           </div>
+           <div className="h-[350px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={timelineData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#FF3D03" stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor="#FF3D03" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                  <Area type="monotone" dataKey="Demandas" stroke="#FF3D03" strokeWidth={4} fillOpacity={1} fill="url(#colorCount)" />
+                </AreaChart>
+              </ResponsiveContainer>
+           </div>
         </div>
       </div>
     </div>
