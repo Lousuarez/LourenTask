@@ -4,8 +4,6 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   ClipboardList, 
-  PlusCircle, 
-  Settings, 
   ChevronDown, 
   LogOut, 
   Menu, 
@@ -17,7 +15,8 @@ import {
   AlertTriangle,
   LogIn,
   Layers,
-  Zap
+  Zap,
+  Settings
 } from 'lucide-react';
 import { User, MenuKey } from '../types';
 
@@ -37,6 +36,7 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
   const hasPerm = (key: MenuKey) => permissions.includes(key);
 
   const adminItems = [
+    { key: MenuKey.CONFIG_COMPANY, label: 'Empresas', icon: Building2, path: '/cadastros/empresas' },
     { key: MenuKey.CONFIG_TASK_TYPE, label: 'Tipo de Tarefa', icon: Tag, path: '/cadastros/tipos' },
     { key: MenuKey.CONFIG_SECTOR, label: 'Setor', icon: Building2, path: '/cadastros/setores' },
     { key: MenuKey.CONFIG_CRITICALITY, label: 'Criticidade', icon: AlertTriangle, path: '/cadastros/criticidades' },
@@ -50,49 +50,33 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
 
   return (
     <div className="flex h-screen overflow-hidden font-['Inter']">
-      {/* Sidebar Mobile Backdrop */}
       {sidebarOpen && (
-        <div 
-          className="fixed inset-0 z-20 bg-black/60 backdrop-blur-sm lg:hidden" 
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 z-20 bg-black/60 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-30 w-64 bg-slate-950 text-white transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        border-r border-white/5
-      `}>
+      <aside className={`fixed inset-y-0 left-0 z-30 w-64 bg-slate-950 text-white transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} border-r border-white/5`}>
         <div className="flex flex-col h-full">
           <div className="flex items-center space-x-3 px-6 py-6">
-            <div className="w-10 h-10 flex-shrink-0 bg-[#FF3D03] rounded-xl flex items-center justify-center text-white shadow-lg shadow-[#FF3D03]/30">
+            <div className="w-10 h-10 flex-shrink-0 bg-brand rounded-xl flex items-center justify-center text-white shadow-lg">
                <Zap size={22} fill="currentColor" />
             </div>
             <span className="text-xl font-black tracking-tighter text-white">
-              Louren<span className="text-[#FF3D03]">Task</span>
+              Louren<span className="text-brand">Task</span>
             </span>
             <button className="lg:hidden ml-auto text-slate-400" onClick={() => setSidebarOpen(false)}><X size={20}/></button>
           </div>
 
           <nav className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto custom-scrollbar">
             {hasPerm(MenuKey.DASHBOARD) && (
-              <Link 
-                to="/" 
-                className={`flex items-center px-4 py-3 rounded-xl transition-all ${isActive('/') ? 'bg-[#FF3D03] text-white shadow-lg shadow-[#FF3D03]/20' : 'hover:bg-white/5 text-slate-400 hover:text-white'}`}
-              >
+              <Link to="/" className={`flex items-center px-4 py-3 rounded-xl transition-all ${isActive('/') ? 'bg-brand text-white shadow-lg' : 'hover:bg-white/5 text-slate-400 hover:text-white'}`}>
                 <LayoutDashboard size={18} className="mr-3" />
                 <span className="font-bold text-sm">Dashboard</span>
               </Link>
             )}
 
-            {/* Tarefas Section */}
             {(hasPerm(MenuKey.TASKS_LIST) || hasPerm(MenuKey.TASKS_CREATE)) && (
               <div className="pt-2">
-                <button 
-                  onClick={() => setTasksOpen(!tasksOpen)}
-                  className="flex items-center justify-between w-full px-4 py-3 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all"
-                >
+                <button onClick={() => setTasksOpen(!tasksOpen)} className="flex items-center justify-between w-full px-4 py-3 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
                   <div className="flex items-center">
                     <ClipboardList size={18} className="mr-3" />
                     <span className="font-bold text-sm">Tarefas</span>
@@ -102,27 +86,19 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
                 {tasksOpen && (
                   <div className="pl-8 mt-1 space-y-1">
                     {hasPerm(MenuKey.TASKS_CREATE) && (
-                      <Link to="/tarefas/nova" className={`flex items-center px-4 py-2 rounded-lg text-sm transition-colors ${isActive('/tarefas/nova') ? 'text-[#FF3D03] font-black' : 'text-slate-500 hover:text-white'}`}>
-                        Criar Nova
-                      </Link>
+                      <Link to="/tarefas/nova" className={`flex items-center px-4 py-2 rounded-lg text-sm transition-colors ${isActive('/tarefas/nova') ? 'text-brand font-black' : 'text-slate-500 hover:text-white'}`}>Criar Nova</Link>
                     )}
                     {hasPerm(MenuKey.TASKS_LIST) && (
-                      <Link to="/tarefas" className={`flex items-center px-4 py-2 rounded-lg text-sm transition-colors ${isActive('/tarefas') ? 'text-[#FF3D03] font-black' : 'text-slate-500 hover:text-white'}`}>
-                        Listagem
-                      </Link>
+                      <Link to="/tarefas" className={`flex items-center px-4 py-2 rounded-lg text-sm transition-colors ${isActive('/tarefas') ? 'text-brand font-black' : 'text-slate-500 hover:text-white'}`}>Listagem</Link>
                     )}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Cadastros Section */}
             {adminItems.some(item => hasPerm(item.key)) && (
               <div className="pt-2">
-                <button 
-                  onClick={() => setCadastrosOpen(!cadastrosOpen)}
-                  className="flex items-center justify-between w-full px-4 py-3 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all"
-                >
+                <button onClick={() => setCadastrosOpen(!cadastrosOpen)} className="flex items-center justify-between w-full px-4 py-3 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
                   <div className="flex items-center">
                     <Settings size={18} className="mr-3" />
                     <span className="font-bold text-sm">Administração</span>
@@ -132,13 +108,7 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
                 {cadastrosOpen && (
                   <div className="pl-8 mt-1 space-y-1">
                     {adminItems.map(item => hasPerm(item.key) && (
-                      <Link 
-                        key={item.key} 
-                        to={item.path} 
-                        className={`flex items-center px-4 py-2 rounded-lg text-sm transition-colors ${isActive(item.path) ? 'text-[#FF3D03] font-black' : 'text-slate-500 hover:text-white'}`}
-                      >
-                        {item.label}
-                      </Link>
+                      <Link key={item.key} to={item.path} className={`flex items-center px-4 py-2 rounded-lg text-sm transition-colors ${isActive(item.path) ? 'text-brand font-black' : 'text-slate-500 hover:text-white'}`}>{item.label}</Link>
                     ))}
                   </div>
                 )}
@@ -148,7 +118,7 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
 
           <div className="p-4 border-t border-white/5 bg-slate-950/50">
             <div className="flex items-center px-4 py-3 mb-2 bg-white/5 rounded-2xl">
-              <div className="w-9 h-9 rounded-xl bg-[#FF3D03] flex items-center justify-center text-xs font-black mr-3 text-white">
+              <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center text-xs font-black mr-3 text-white">
                 {user.name.charAt(0).toUpperCase()}
               </div>
               <div className="overflow-hidden">
@@ -156,10 +126,7 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
                 <p className="text-[10px] text-slate-500 truncate font-medium">{user.email}</p>
               </div>
             </div>
-            <button 
-              onClick={onLogout}
-              className="flex items-center w-full px-4 py-3 text-xs font-bold text-slate-500 hover:text-white hover:bg-red-500/10 rounded-xl transition-all"
-            >
+            <button onClick={onLogout} className="flex items-center w-full px-4 py-3 text-xs font-bold text-slate-500 hover:text-white hover:bg-red-500/10 rounded-xl transition-all">
               <LogOut size={16} className="mr-3" />
               Encerrar Sessão
             </button>
@@ -173,13 +140,11 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
             <button className="lg:hidden mr-4 p-2 hover:bg-slate-100 rounded-lg transition-colors" onClick={() => setSidebarOpen(true)}>
               <Menu size={20}/>
             </button>
-            <div className="flex flex-col">
-               <h2 className="text-sm font-black text-slate-950 uppercase tracking-widest">
+            <h2 className="text-sm font-black text-slate-950 uppercase tracking-widest">
                 {isActive('/') && 'Gestão Operacional'}
                 {location.pathname.includes('/tarefas') && 'Operação de Demandas'}
                 {location.pathname.includes('/cadastros') && 'Configuração do Sistema'}
-              </h2>
-            </div>
+            </h2>
           </div>
           <div className="flex items-center space-x-4">
              <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></div>

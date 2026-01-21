@@ -10,13 +10,21 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
     <style>
+        :root {
+            --brand-color: #FF3D03;
+        }
         body { font-family: 'Inter', sans-serif; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Overrides para usar a cor variável */
+        .bg-brand { background-color: var(--brand-color) !important; }
+        .text-brand { color: var(--brand-color) !important; }
+        .border-brand { border-color: var(--brand-color) !important; }
+        .ring-brand { --tw-ring-color: var(--brand-color) !important; }
     </style>
-    <!-- Shim para evitar erro de 'process is not defined' na Hostinger -->
     <script>
         window.process = window.process || { env: {} };
     </script>
@@ -37,7 +45,6 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <!-- Carregamento do ponto de entrada da aplicação -->
     <script type="module" src="./index.tsx"></script>
 </body>
 </html>

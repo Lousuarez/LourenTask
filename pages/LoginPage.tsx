@@ -24,7 +24,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         .from('users')
         .select('*, groups(permissions)')
         .eq('email', email)
-        .eq('password', password) // Nota: Em produção, use Supabase Auth ou Hash de senhas
+        .eq('password', password)
         .single();
 
       if (dbError || !user) {
@@ -45,16 +45,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     <div className="min-h-screen bg-[#030712] flex items-center justify-center p-6">
       <div className="max-w-md w-full">
         <div className="text-center mb-10 flex flex-col items-center">
-          <div className="w-20 h-20 mb-6 bg-[#FF3D03] rounded-[24px] flex items-center justify-center text-white shadow-2xl shadow-[#FF3D03]/40">
+          <div className="w-20 h-20 mb-6 bg-brand rounded-[24px] flex items-center justify-center text-white shadow-2xl shadow-brand/40">
              <Zap size={44} fill="currentColor" />
           </div>
           <h1 className="text-4xl font-black text-white tracking-tighter">
-            Louren<span className="text-[#FF3D03]">Task</span>
+            Louren<span className="text-brand">Task</span>
           </h1>
         </div>
 
         <div className="bg-white rounded-[32px] p-10 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-[#FF3D03]"></div>
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-brand"></div>
           
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
@@ -74,7 +74,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                   value={email}
                   disabled={loading}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#FF3D03] outline-none font-bold text-slate-700"
+                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-brand outline-none font-bold text-slate-700"
                   placeholder="Seu e-mail"
                 />
               </div>
@@ -90,7 +90,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                   value={password}
                   disabled={loading}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#FF3D03] outline-none font-bold text-slate-700"
+                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-brand outline-none font-bold text-slate-700"
                   placeholder="••••••••"
                 />
               </div>
@@ -99,7 +99,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-[#FF3D03] hover:bg-[#E63602] text-white font-black py-5 rounded-2xl transition-all shadow-xl shadow-[#FF3D03]/30 active:scale-[0.97] uppercase tracking-widest text-xs disabled:opacity-50"
+              className="w-full bg-brand hover:brightness-110 text-white font-black py-5 rounded-2xl transition-all shadow-xl shadow-brand/30 active:scale-[0.97] uppercase tracking-widest text-xs disabled:opacity-50"
             >
               {loading ? 'AUTENTICANDO...' : 'Entrar'}
             </button>

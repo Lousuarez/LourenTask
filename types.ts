@@ -10,7 +10,8 @@ export enum MenuKey {
   CONFIG_ENTRY_METHOD = 'CONFIG_ENTRY_METHOD',
   CONFIG_USERS = 'CONFIG_USERS',
   CONFIG_GROUPS = 'CONFIG_GROUPS',
-  CONFIG_STATUS = 'CONFIG_STATUS'
+  CONFIG_STATUS = 'CONFIG_STATUS',
+  CONFIG_COMPANY = 'CONFIG_COMPANY'
 }
 
 export enum VisibilityScope {
@@ -19,10 +20,18 @@ export enum VisibilityScope {
   SECTOR = 'SECTOR'
 }
 
+export interface Company {
+  id: string;
+  name: string;
+  primaryColor?: string;
+  created_at?: string;
+}
+
 export interface AccessGroup {
   id: string;
   name: string;
   permissions: MenuKey[];
+  companyId: string;
 }
 
 export interface User {
@@ -32,6 +41,8 @@ export interface User {
   password?: string;
   active: boolean;
   groupId: string;
+  companyId: string; 
+  companyIds: string[]; 
   visibilityScope?: VisibilityScope;
   visibleSectorIds?: string[];
 }
@@ -41,26 +52,34 @@ export interface TaskType {
   name: string;
   description?: string;
   active: boolean;
+  companyId: string;
+  companyIds?: string[];
 }
 
 export interface Sector {
   id: string;
   name: string;
   active: boolean;
+  companyId: string;
+  companyIds?: string[];
 }
 
 export interface Criticality {
   id: string;
   name: string;
-  level: number; // 1 to 5
+  level: number;
   slaDays?: number;
   active: boolean;
+  companyId: string;
+  companyIds?: string[];
 }
 
 export interface EntryMethod {
   id: string;
   name: string;
   active: boolean;
+  companyId: string;
+  companyIds?: string[];
 }
 
 export interface TaskStatus {
@@ -69,13 +88,14 @@ export interface TaskStatus {
   order: number;
   isFinal: boolean;
   active: boolean;
+  companyId: string;
 }
 
 export interface Task {
   id: string;
   title: string;
   responsibleId: string;
-  deadline: string; // ISO string
+  deadline: string; 
   criticalityId: string;
   sectorId: string;
   entryMethodId: string;
@@ -86,6 +106,7 @@ export interface Task {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  companyId: string;
 }
 
 export interface TaskHistory {
