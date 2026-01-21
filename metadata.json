@@ -1,0 +1,5 @@
+{
+  "name": "LourenTask - Sistema de Gestão de Demandas",
+  "description": "Uma plataforma completa para controle de tarefas, com autenticação, permissões por grupo, dashboard interativo e gestão de status em tempo real.",
+  "requestFramePermissions": []
+}
