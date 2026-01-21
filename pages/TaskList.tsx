@@ -156,20 +156,46 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
     } catch (err) { console.error(err); } finally { setActionLoading(null); }
   };
 
-  const getStatusBadge = (task: Task) => {
+  const renderSlaLabel = (task: Task) => {
     const status = statuses.find(s => s.id === task.status_id);
     const today = getTodayISO();
     const isFinished = status?.isFinal;
     const isDelayed = task.deadline.split('T')[0] < today && !isFinished;
     const isToday = task.deadline.split('T')[0] === today && !isFinished;
 
-    if (isFinished) return <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase rounded-full border border-emerald-200">Concluída</span>;
-    if (isDelayed) return <span className="px-3 py-1 bg-rose-100 text-rose-700 text-[10px] font-black uppercase rounded-full border border-rose-200 animate-pulse">Fora do SLA</span>;
-    if (status?.order === 2) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full shadow-sm">Em Execução</span>;
-    if (status?.order === 3) return <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase rounded-full border border-amber-200">Pausada</span>;
-    if (isToday) return <span className="px-3 py-1 bg-brand text-white text-[10px] font-black uppercase rounded-full shadow-lg shadow-brand/30">Vence Hoje</span>;
-    
-    return <span className="px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-black uppercase rounded-full border border-slate-200">{status?.name || 'Pendente'}</span>;
+    if (isDelayed) {
+      return (
+        <span className="flex items-center gap-1 text-[8px] font-black uppercase text-rose-500 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100 animate-pulse">
+          <AlertTriangle size={8} /> Fora do SLA
+        </span>
+      );
+    }
+    if (isToday) {
+      return (
+        <span className="flex items-center gap-1 text-[8px] font-black uppercase text-brand bg-brand/5 px-2 py-0.5 rounded-md border border-brand/10">
+          <Clock size={8} /> Vence Hoje
+        </span>
+      );
+    }
+    return null;
+  };
+
+  const renderOperationalBadge = (task: Task) => {
+    const status = statuses.find(s => s.id === task.status_id);
+    const isFinished = status?.isFinal;
+    const isPaused = status?.order === 3;
+    const isRunning = status?.order === 2;
+
+    if (isFinished) {
+      return <span className="px-4 py-1.5 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase rounded-xl border border-emerald-100 flex items-center justify-center gap-2"><CheckCircle size={12} /> Concluída</span>;
+    }
+    if (isPaused) {
+      return <span className="px-4 py-1.5 bg-amber-500 text-white text-[10px] font-black uppercase rounded-xl shadow-lg shadow-amber-200 flex items-center justify-center gap-2"><Pause size={12} fill="currentColor" /> Pausada</span>;
+    }
+    if (isRunning) {
+      return <span className="px-4 py-1.5 bg-brand text-white text-[10px] font-black uppercase rounded-xl shadow-lg shadow-brand/20 flex items-center justify-center gap-2"><Play size={12} fill="currentColor" /> Em Execução</span>;
+    }
+    return <span className="px-4 py-1.5 bg-slate-100 text-slate-500 text-[10px] font-black uppercase rounded-xl border border-slate-200 flex items-center justify-center gap-2">{status?.name || 'Pendente'}</span>;
   };
 
   const renderActionButtons = (task: Task, isModal = false) => {
@@ -251,16 +277,16 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Listagem */}
+      {/* Listagem Premium */}
       <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest">
               <tr>
-                <th className="px-10 py-7">Identificação / Setor</th>
-                <th className="px-10 py-7">Responsável</th>
-                <th className="px-10 py-7 text-center">Situação Atual</th>
-                <th className="px-10 py-7 text-right">Ações Rápidas</th>
+                <th className="px-10 py-7">Identificação / Urgência</th>
+                <th className="px-10 py-7">Equipe Operacional</th>
+                <th className="px-10 py-7 text-center">Situação do Fluxo</th>
+                <th className="px-10 py-7 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -268,44 +294,68 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                 <tr>
                   <td colSpan={4} className="py-24 text-center">
                     <Loader2 className="animate-spin text-brand mx-auto mb-4" size={32} />
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Consultando Banco de Dados...</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sincronizando Dados...</p>
                   </td>
                 </tr>
               ) : tasks.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-24 text-center">
                     <div className="text-slate-200 mb-4"><Search size={48} className="mx-auto" /></div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhuma demanda encontrada</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhuma demanda localizada</p>
                   </td>
                 </tr>
               ) : tasks.map(task => {
                 const responsible = users.find(u => u.id === task.responsible_id);
+                const status = statuses.find(s => s.id === task.status_id);
+                const today = getTodayISO();
+                const isFinished = status?.isFinal;
+                const isDelayed = task.deadline.split('T')[0] < today && !isFinished;
+                const isToday = task.deadline.split('T')[0] === today && !isFinished;
+                const isPaused = status?.order === 3;
+
+                let rowBorder = '';
+                if (isDelayed) rowBorder = 'border-l-4 border-l-rose-500';
+                else if (isToday) rowBorder = 'border-l-4 border-l-orange-400';
+                else if (isPaused) rowBorder = 'border-l-4 border-l-amber-400';
+
                 return (
-                  <tr key={task.id} className="hover:bg-slate-50/50 group transition-all cursor-pointer" onClick={() => setSelectedTask(task)}>
-                    <td className="px-10 py-7">
-                      <div className="font-black text-slate-800 text-sm uppercase group-hover:text-brand transition-colors">{task.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded">{sectors.find(s => s.id === task.sector_id)?.name || 'Setor não identificado'}</span>
-                        <span className="text-[10px] font-bold text-brand uppercase flex items-center"><Clock size={10} className="mr-1" /> {new Date(task.deadline).toLocaleDateString()}</span>
+                  <tr 
+                    key={task.id} 
+                    className={`hover:bg-slate-50/50 group transition-all cursor-pointer relative ${rowBorder}`} 
+                    onClick={() => setSelectedTask(task)}
+                  >
+                    <td className="px-10 py-8">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="font-black text-slate-800 text-sm uppercase group-hover:text-brand transition-colors tracking-tight">{task.title}</div>
+                        <div className="flex items-center gap-3">
+                           <span className="text-[9px] font-bold text-slate-400 uppercase bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">{sectors.find(s => s.id === task.sector_id)?.name}</span>
+                           <div className="flex items-center gap-2">
+                             <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Calendar size={10} /> {new Date(task.deadline).toLocaleDateString()}</span>
+                             {renderSlaLabel(task)}
+                           </div>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-10 py-7">
+                    <td className="px-10 py-8">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 font-black text-xs uppercase shadow-sm overflow-hidden shrink-0">
+                        <div className="w-10 h-10 rounded-[14px] bg-slate-100 flex items-center justify-center text-slate-400 font-black text-xs uppercase shadow-sm overflow-hidden border border-slate-200">
                           {responsible?.profile_image_url ? (
                             <img src={responsible.profile_image_url} alt={responsible.name} className="w-full h-full object-cover" />
                           ) : (
                             responsible?.name?.charAt(0) || '?'
                           )}
                         </div>
-                        <span className="text-sm font-bold text-slate-600 truncate max-w-[150px]">{responsible?.name || 'Sem responsável'}</span>
+                        <div>
+                          <p className="text-xs font-bold text-slate-700 truncate max-w-[140px]">{responsible?.name || 'Não atribuído'}</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Responsável</p>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-10 py-7 text-center">
-                      <div className="flex justify-center">{getStatusBadge(task)}</div>
+                    <td className="px-10 py-8 text-center">
+                      <div className="flex justify-center">{renderOperationalBadge(task)}</div>
                     </td>
-                    <td className="px-10 py-7 text-right">
-                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                    <td className="px-10 py-8 text-right">
+                      <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
                         {renderActionButtons(task)}
                         <button onClick={(e) => { e.stopPropagation(); navigate(`/tarefas/editar/${task.id}`); }} className="p-3 bg-white text-slate-400 border border-slate-100 rounded-xl hover:text-brand transition-all shadow-sm hover:border-brand/20">
                           <Edit2 size={16} />
@@ -321,11 +371,11 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
         
         {/* Paginação */}
         {totalCount > ITEMS_PER_PAGE && (
-          <div className="px-10 py-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mostrando {tasks.length} de {totalCount} resultados</p>
+          <div className="px-10 py-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Métrica: {tasks.length} de {totalCount} protocolos</p>
             <div className="flex gap-2">
-              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand disabled:opacity-30"><ChevronLeft size={18}/></button>
-              <button disabled={currentPage * ITEMS_PER_PAGE >= totalCount} onClick={() => setCurrentPage(p => p + 1)} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand disabled:opacity-30"><ChevronRight size={18}/></button>
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-brand disabled:opacity-30 shadow-sm"><ChevronLeft size={18}/></button>
+              <button disabled={currentPage * ITEMS_PER_PAGE >= totalCount} onClick={() => setCurrentPage(p => p + 1)} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-brand disabled:opacity-30 shadow-sm"><ChevronRight size={18}/></button>
             </div>
           </div>
         )}
@@ -354,9 +404,12 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                 <div className="flex justify-between items-start gap-4">
                   <div className="space-y-1 flex-1">
                     <h4 className="text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">{selectedTask.title}</h4>
-                    <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2"><Tag size={12} /> {taskTypes.find(tt => tt.id === selectedTask.task_type_id)?.name || 'Atividade Geral'}</p>
+                    <div className="flex items-center gap-4 mt-2">
+                       <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2"><Tag size={12} /> {taskTypes.find(tt => tt.id === selectedTask.task_type_id)?.name || 'Atividade Geral'}</p>
+                       {renderSlaLabel(selectedTask)}
+                    </div>
                   </div>
-                  <div className="shrink-0">{getStatusBadge(selectedTask)}</div>
+                  <div className="shrink-0">{renderOperationalBadge(selectedTask)}</div>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -385,7 +438,15 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                   <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400"><Calendar size={20} /></div>
                   <div>
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Abertura</p>
-                    <p className="font-bold text-slate-800 text-sm">{new Date(selectedTask.created_at).toLocaleDateString()}</p>
+                    <p className="font-bold text-slate-800 text-sm">
+                      {new Date(selectedTask.created_at).toLocaleString('pt-BR', { 
+                        day: '2-digit', 
+                        month: '2-digit', 
+                        year: 'numeric', 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
