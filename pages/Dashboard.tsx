@@ -199,13 +199,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-4">
-          <div className="lg:col-span-5 bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm relative overflow-hidden">
+          <div className="lg:col-span-5 bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm relative overflow-hidden min-h-[460px]">
             <div className="flex flex-col gap-1 mb-10">
               <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Saúde de Conclusão</h3>
               <p className="text-[9px] font-bold text-slate-400 uppercase">Percentual de eficiência SLA</p>
             </div>
-            <div className="h-[320px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[320px] w-full min-h-[320px] relative">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
                   <Pie data={concludedChartData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={8} dataKey="value" stroke="none">
                     {concludedChartData.map((entry, index) => (
@@ -219,24 +219,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'black', textTransform: 'uppercase', paddingTop: '20px' }} />
                 </PieChart>
               </ResponsiveContainer>
-            </div>
-            {metrics.concluded > 0 && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="text-center mt-6">
-                  <p className="text-4xl font-black text-slate-900 leading-none">{Math.round((metrics.onTime / metrics.concluded) * 100)}%</p>
-                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Eficiência</p>
+              {metrics.concluded > 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-8">
+                  <div className="text-center">
+                    <p className="text-4xl font-black text-slate-900 leading-none">{Math.round((metrics.onTime / metrics.concluded) * 100)}%</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Eficiência</p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          <div className="lg:col-span-7 bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm">
+          <div className="lg:col-span-7 bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm min-h-[460px]">
             <div className="flex flex-col gap-1 mb-10">
               <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Carga de Trabalho por Setor</h3>
               <p className="text-[9px] font-bold text-slate-400 uppercase">Volume de protocolos por unidade</p>
             </div>
-            <div className="h-[320px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[320px] w-full min-h-[320px]">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={sectorChartData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                   <XAxis type="number" hide />

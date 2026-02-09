@@ -174,42 +174,38 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
   };
 
   const deleteTask = async (taskId: string) => {
-    if (!taskId || actionLoading) return;
+    if (!taskId) return;
     
-    const confirmMessage = "⚠️ ATENÇÃO: Esta ação é permanente e removerá todo o histórico vinculado a esta demanda. Confirmar exclusão?";
-    if (!window.confirm(confirmMessage)) return;
-    
+    const confirmExclusion = window.confirm("⚠️ EXCLUSÃO PERMANENTE\n\nTem certeza que deseja apagar esta demanda e todo o seu histórico? Esta ação não pode ser desfeita.");
+    if (!confirmExclusion) return;
+
+    console.log("Iniciando processo de exclusão para:", taskId);
     setActionLoading(taskId);
-    console.log("Iniciando exclusão da tarefa:", taskId);
 
     try {
-      // 1. Tentar deletar o histórico explicitamente (caso o CASCADE falhe ou não esteja pronto)
-      const { error: histError } = await supabase.from('task_history').delete().eq('task_id', taskId);
-      if (histError) {
-        console.warn("Aviso ao deletar histórico:", histError);
-        // Não lançamos erro aqui pois o CASCADE pode já ter feito o trabalho
+      // 1. Deleta histórico (Garante que não haverá erro de Foreign Key)
+      await supabase.from('task_history').delete().eq('task_id', taskId);
+      
+      // 2. Deleta a tarefa
+      const { error: deleteError } = await supabase.from('tasks').delete().eq('id', taskId);
+      
+      if (deleteError) {
+        throw new Error(deleteError.message);
       }
 
-      // 2. Deletar a tarefa propriamente dita
-      const { error: taskError } = await supabase.from('tasks').delete().eq('id', taskId);
+      // 3. Sucesso - Atualiza UI localmente antes de recarregar
+      console.log("Deleção confirmada no banco.");
+      setTasks(current => current.filter(t => t.id !== taskId));
+      if (selectedTask?.id === taskId) setSelectedTask(null);
       
-      if (taskError) {
-        throw new Error(taskError.message);
-      }
+      alert("✅ Demanda excluída com sucesso.");
+      
+      // 4. Recarrega dados para atualizar contadores globais
+      fetchTasks();
 
-      console.log("Tarefa deletada com sucesso!");
-      
-      // 3. Feedback Visual e Atualização de Estado
-      if (selectedTask?.id === taskId) {
-        setSelectedTask(null);
-      }
-      
-      // Recarregar a lista localmente
-      await fetchTasks();
-      
     } catch (err: any) {
-      console.error("Erro crítico na deleção:", err);
-      alert(`Falha ao excluir demanda: ${err.message || 'Erro desconhecido'}`);
+      console.error("Falha na exclusão:", err);
+      alert(`❌ Erro ao excluir: ${err.message || 'Verifique suas permissões de acesso.'}`);
     } finally {
       setActionLoading(null);
     }
@@ -280,17 +276,16 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
 
     const isLoading = actionLoading === task.id;
 
-    if (isLoading) return <Loader2 size={16} className="animate-spin text-slate-400 mx-4" />;
-
     return (
       <div className="flex items-center gap-2">
         {/* Iniciar */}
         {currentStatus?.order === 1 && runningStatus && (
           <button 
             type="button"
-            onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, runningStatus.id); }}
+            disabled={!!actionLoading}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateTaskStatus(task.id, runningStatus.id); }}
             title="Iniciar Tarefa"
-            className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-500 hover:text-white transition-all shadow-sm border border-emerald-100"
+            className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-500 hover:text-white transition-all shadow-sm border border-emerald-100 disabled:opacity-50"
           >
             <Play size={14} fill="currentColor" />
           </button>
@@ -300,9 +295,10 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
         {!currentStatus?.isFinal && currentStatus?.order === 2 && finalStatus && (
           <button 
             type="button"
-            onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, finalStatus.id); }}
+            disabled={!!actionLoading}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateTaskStatus(task.id, finalStatus.id); }}
             title="Finalizar Tarefa"
-            className="p-2.5 bg-brand/5 text-brand rounded-xl hover:bg-brand hover:text-white transition-all shadow-sm border border-brand/10"
+            className="p-2.5 bg-brand/5 text-brand rounded-xl hover:bg-brand hover:text-white transition-all shadow-sm border border-brand/10 disabled:opacity-50"
           >
             <CheckCircle size={14} fill="currentColor" />
           </button>
@@ -312,25 +308,27 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
         {currentStatus?.isFinal && initialStatus && (
           <button 
             type="button"
-            onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, initialStatus.id); }}
+            disabled={!!actionLoading}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateTaskStatus(task.id, initialStatus.id); }}
             title="Reabrir Demanda"
-            className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-800 hover:text-white transition-all shadow-sm border border-slate-200"
+            className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-800 hover:text-white transition-all shadow-sm border border-slate-200 disabled:opacity-50"
           >
             <RefreshCcw size={14} />
           </button>
         )}
 
-        {/* Excluir - Lixeira com destaque */}
+        {/* Excluir - Botão de Lixeira definitivo */}
         <button 
           type="button"
-          disabled={isLoading}
+          disabled={!!actionLoading}
           onClick={(e) => { 
             e.preventDefault();
             e.stopPropagation(); 
             deleteTask(task.id); 
           }}
-          title="Excluir Demanda Permanentemente"
-          className="p-2.5 bg-rose-50 text-rose-500 border border-rose-100 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm active:scale-90 flex items-center justify-center disabled:opacity-50"
+          title="Excluir Permanentemente"
+          className={`p-2.5 border rounded-xl transition-all shadow-sm active:scale-90 flex items-center justify-center 
+            ${isLoading ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-wait' : 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white'}`}
         >
           {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
         </button>
@@ -458,7 +456,7 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                         {renderQuickActions(task)}
                         <button 
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/tarefas/editar/${task.id}`); }} 
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/tarefas/editar/${task.id}`); }} 
                           className="p-2.5 bg-white text-slate-400 border border-slate-100 rounded-xl hover:text-brand transition-all shadow-sm hover:border-brand/20"
                         >
                           <Edit2 size={16} />
@@ -664,8 +662,13 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                     <button 
                       type="button"
                       disabled={!!actionLoading}
-                      onClick={(e) => { e.stopPropagation(); deleteTask(selectedTask.id); }} 
-                      className="px-8 py-4 bg-white text-rose-500 border border-rose-100 rounded-2xl font-black uppercase text-[10px] shadow-sm hover:bg-rose-50 transition-colors flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                      onClick={(e) => { 
+                        e.preventDefault(); 
+                        e.stopPropagation(); 
+                        deleteTask(selectedTask.id); 
+                      }} 
+                      className={`px-8 py-4 border rounded-2xl font-black uppercase text-[10px] shadow-sm transition-all flex items-center justify-center gap-2 active:scale-95 
+                        ${actionLoading === selectedTask.id ? 'bg-slate-100 text-slate-400 cursor-wait' : 'bg-white text-rose-500 border-rose-100 hover:bg-rose-50'}`}
                     >
                       {actionLoading === selectedTask.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} 
                       Excluir Demanda
@@ -675,8 +678,9 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                       initialStatus ? (
                         <button 
                           type="button"
-                          onClick={() => updateTaskStatus(selectedTask.id, initialStatus.id)} 
-                          className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-2"
+                          disabled={!!actionLoading}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateTaskStatus(selectedTask.id, initialStatus.id); }} 
+                          className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
                         >
                           <RefreshCcw size={14} /> Reabrir Demanda
                         </button>
@@ -686,8 +690,9 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                         {currentStatus?.order === 1 && runningStatus && (
                           <button 
                             type="button"
-                            onClick={() => updateTaskStatus(selectedTask.id, runningStatus.id)} 
-                            className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-emerald-200"
+                            disabled={!!actionLoading}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateTaskStatus(selectedTask.id, runningStatus.id); }} 
+                            className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-emerald-200 disabled:opacity-50"
                           >
                             Iniciar Tarefa
                           </button>
@@ -695,8 +700,9 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                         {currentStatus?.order === 2 && finalStatus && (
                           <button 
                             type="button"
-                            onClick={() => updateTaskStatus(selectedTask.id, finalStatus.id)} 
-                            className="flex-1 py-4 bg-brand text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-brand/20"
+                            disabled={!!actionLoading}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateTaskStatus(selectedTask.id, finalStatus.id); }} 
+                            className="flex-1 py-4 bg-brand text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-brand/20 disabled:opacity-50"
                           >
                             Finalizar Tarefa
                           </button>
