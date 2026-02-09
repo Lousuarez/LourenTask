@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../db';
 import { Task, TaskStatus, User, Sector, Criticality, TaskType, MenuKey, TaskHistory, VisibilityScope, EntryMethod } from '../types';
 import { 
-  Search, Play, CheckCircle, RotateCcw, PlusCircle, X, Pause, Loader2, Edit2, Clock, User as UserIcon, MessageSquare, Tag, ChevronLeft, ChevronRight, Filter, AlertTriangle, Calendar, Hash, Flag, Zap, Workflow, Info, CornerDownRight, LogIn, RefreshCcw
+  Search, Play, CheckCircle, RotateCcw, PlusCircle, X, Pause, Loader2, Edit2, Clock, User as UserIcon, MessageSquare, Tag, ChevronLeft, ChevronRight, Filter, AlertTriangle, Calendar, Hash, Flag, Zap, Workflow, Info, CornerDownRight, LogIn, RefreshCcw, Trash2
 } from 'lucide-react';
 
 interface TaskListProps {
@@ -173,6 +173,48 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
     } catch (err) { console.error(err); } finally { setActionLoading(null); }
   };
 
+  const deleteTask = async (taskId: string) => {
+    if (!taskId || actionLoading) return;
+    
+    const confirmMessage = "⚠️ ATENÇÃO: Esta ação é permanente e removerá todo o histórico vinculado a esta demanda. Confirmar exclusão?";
+    if (!window.confirm(confirmMessage)) return;
+    
+    setActionLoading(taskId);
+    console.log("Iniciando exclusão da tarefa:", taskId);
+
+    try {
+      // 1. Tentar deletar o histórico explicitamente (caso o CASCADE falhe ou não esteja pronto)
+      const { error: histError } = await supabase.from('task_history').delete().eq('task_id', taskId);
+      if (histError) {
+        console.warn("Aviso ao deletar histórico:", histError);
+        // Não lançamos erro aqui pois o CASCADE pode já ter feito o trabalho
+      }
+
+      // 2. Deletar a tarefa propriamente dita
+      const { error: taskError } = await supabase.from('tasks').delete().eq('id', taskId);
+      
+      if (taskError) {
+        throw new Error(taskError.message);
+      }
+
+      console.log("Tarefa deletada com sucesso!");
+      
+      // 3. Feedback Visual e Atualização de Estado
+      if (selectedTask?.id === taskId) {
+        setSelectedTask(null);
+      }
+      
+      // Recarregar a lista localmente
+      await fetchTasks();
+      
+    } catch (err: any) {
+      console.error("Erro crítico na deleção:", err);
+      alert(`Falha ao excluir demanda: ${err.message || 'Erro desconhecido'}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const renderSlaLabel = (task: Task) => {
     const status = statuses.find(s => s.id === task.status_id);
     const today = getTodayISO();
@@ -219,14 +261,10 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
   const renderOperationalBadge = (task: Task) => {
     const status = statuses.find(s => s.id === task.status_id);
     const isFinished = status?.isFinal;
-    const isPaused = status?.order === 3;
     const isRunning = status?.order === 2;
 
     if (isFinished) {
       return <span className="px-4 py-1.5 bg-slate-50 text-slate-400 text-[10px] font-black uppercase rounded-xl border border-slate-100 flex items-center justify-center gap-2"><CheckCircle size={12} /> Finalizada</span>;
-    }
-    if (isPaused) {
-      return <span className="px-4 py-1.5 bg-amber-500 text-white text-[10px] font-black uppercase rounded-xl shadow-lg shadow-amber-200 flex items-center justify-center gap-2"><Pause size={12} fill="currentColor" /> Pausada</span>;
     }
     if (isRunning) {
       return <span className="px-4 py-1.5 bg-brand text-white text-[10px] font-black uppercase rounded-xl shadow-lg shadow-brand/20 flex items-center justify-center gap-2"><Play size={12} fill="currentColor" /> Em Execução</span>;
@@ -237,7 +275,6 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
   const renderQuickActions = (task: Task) => {
     const currentStatus = statuses.find(s => s.id === task.status_id);
     const runningStatus = statuses.find(s => s.order === 2);
-    const pausedStatus = statuses.find(s => s.order === 3);
     const finalStatus = statuses.find(s => s.isFinal);
     const initialStatus = statuses.find(s => s.order === 1);
 
@@ -247,44 +284,34 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
 
     return (
       <div className="flex items-center gap-2">
-        {/* Iniciar / Retomar */}
-        {(currentStatus?.order === 1 || currentStatus?.order === 3) && runningStatus && (
+        {/* Iniciar */}
+        {currentStatus?.order === 1 && runningStatus && (
           <button 
+            type="button"
             onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, runningStatus.id); }}
-            title="Iniciar / Retomar"
+            title="Iniciar Tarefa"
             className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-500 hover:text-white transition-all shadow-sm border border-emerald-100"
           >
             <Play size={14} fill="currentColor" />
           </button>
         )}
 
-        {/* Pausar / Concluir */}
-        {currentStatus?.order === 2 && (
-          <>
-            {pausedStatus && (
-              <button 
-                onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, pausedStatus.id); }}
-                title="Pausar"
-                className="p-2.5 bg-amber-50 text-amber-600 rounded-xl hover:bg-amber-500 hover:text-white transition-all shadow-sm border border-amber-100"
-              >
-                <Pause size={14} fill="currentColor" />
-              </button>
-            )}
-            {finalStatus && (
-              <button 
-                onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, finalStatus.id); }}
-                title="Concluir"
-                className="p-2.5 bg-brand/5 text-brand rounded-xl hover:bg-brand hover:text-white transition-all shadow-sm border border-brand/10"
-              >
-                <CheckCircle size={14} fill="currentColor" />
-              </button>
-            )}
-          </>
+        {/* Finalizar */}
+        {!currentStatus?.isFinal && currentStatus?.order === 2 && finalStatus && (
+          <button 
+            type="button"
+            onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, finalStatus.id); }}
+            title="Finalizar Tarefa"
+            className="p-2.5 bg-brand/5 text-brand rounded-xl hover:bg-brand hover:text-white transition-all shadow-sm border border-brand/10"
+          >
+            <CheckCircle size={14} fill="currentColor" />
+          </button>
         )}
 
         {/* Reabrir */}
         {currentStatus?.isFinal && initialStatus && (
           <button 
+            type="button"
             onClick={(e) => { e.stopPropagation(); updateTaskStatus(task.id, initialStatus.id); }}
             title="Reabrir Demanda"
             className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-800 hover:text-white transition-all shadow-sm border border-slate-200"
@@ -292,6 +319,21 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
             <RefreshCcw size={14} />
           </button>
         )}
+
+        {/* Excluir - Lixeira com destaque */}
+        <button 
+          type="button"
+          disabled={isLoading}
+          onClick={(e) => { 
+            e.preventDefault();
+            e.stopPropagation(); 
+            deleteTask(task.id); 
+          }}
+          title="Excluir Demanda Permanentemente"
+          className="p-2.5 bg-rose-50 text-rose-500 border border-rose-100 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm active:scale-90 flex items-center justify-center disabled:opacity-50"
+        >
+          {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+        </button>
       </div>
     );
   };
@@ -370,12 +412,10 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                 const isFinished = status?.isFinal;
                 const isDelayed = !isFinished && task.deadline.split('T')[0] < today;
                 const isToday = !isFinished && task.deadline.split('T')[0] === today;
-                const isPaused = status?.order === 3;
 
                 let rowBorder = '';
                 if (isDelayed) rowBorder = 'border-l-4 border-l-rose-500';
                 else if (isToday) rowBorder = 'border-l-4 border-l-orange-400';
-                else if (isPaused) rowBorder = 'border-l-4 border-l-amber-400';
 
                 return (
                   <tr 
@@ -416,7 +456,11 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
                     <td className="px-10 py-8 text-right">
                       <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
                         {renderQuickActions(task)}
-                        <button onClick={(e) => { e.stopPropagation(); navigate(`/tarefas/editar/${task.id}`); }} className="p-2.5 bg-white text-slate-400 border border-slate-100 rounded-xl hover:text-brand transition-all shadow-sm hover:border-brand/20">
+                        <button 
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/tarefas/editar/${task.id}`); }} 
+                          className="p-2.5 bg-white text-slate-400 border border-slate-100 rounded-xl hover:text-brand transition-all shadow-sm hover:border-brand/20"
+                        >
                           <Edit2 size={16} />
                         </button>
                       </div>
@@ -612,27 +656,51 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
               {(() => {
                 const currentStatus = statuses.find(s => s.id === selectedTask.status_id);
                 const runningStatus = statuses.find(s => s.order === 2);
-                const pausedStatus = statuses.find(s => s.order === 3);
                 const finalStatus = statuses.find(s => s.isFinal);
                 const initialStatus = statuses.find(s => s.order === 1);
 
-                if (currentStatus?.isFinal) {
-                  return initialStatus ? (
-                    <button onClick={() => updateTaskStatus(selectedTask.id, initialStatus.id)} className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-2">
-                      <RefreshCcw size={14} /> Reabrir Demanda
-                    </button>
-                  ) : <p className="text-[10px] font-black text-slate-400 uppercase">Protocolo Finalizado e Auditado</p>;
-                }
-
                 return (
                   <>
-                    {(currentStatus?.order === 1 || currentStatus?.order === 3) && runningStatus && (
-                      <button onClick={() => updateTaskStatus(selectedTask.id, runningStatus.id)} className="flex-1 py-4 bg-brand text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-brand/20">Iniciar / Retomar</button>
-                    )}
-                    {currentStatus?.order === 2 && (
+                    <button 
+                      type="button"
+                      disabled={!!actionLoading}
+                      onClick={(e) => { e.stopPropagation(); deleteTask(selectedTask.id); }} 
+                      className="px-8 py-4 bg-white text-rose-500 border border-rose-100 rounded-2xl font-black uppercase text-[10px] shadow-sm hover:bg-rose-50 transition-colors flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                    >
+                      {actionLoading === selectedTask.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} 
+                      Excluir Demanda
+                    </button>
+
+                    {currentStatus?.isFinal ? (
+                      initialStatus ? (
+                        <button 
+                          type="button"
+                          onClick={() => updateTaskStatus(selectedTask.id, initialStatus.id)} 
+                          className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-2"
+                        >
+                          <RefreshCcw size={14} /> Reabrir Demanda
+                        </button>
+                      ) : <p className="text-[10px] font-black text-slate-400 uppercase self-center ml-auto">Protocolo Finalizado</p>
+                    ) : (
                       <>
-                        {pausedStatus && <button onClick={() => updateTaskStatus(selectedTask.id, pausedStatus.id)} className="flex-1 py-4 bg-amber-500 text-white rounded-2xl font-black uppercase text-[10px]">Pausar</button>}
-                        {finalStatus && <button onClick={() => updateTaskStatus(selectedTask.id, finalStatus.id)} className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px]">Concluir</button>}
+                        {currentStatus?.order === 1 && runningStatus && (
+                          <button 
+                            type="button"
+                            onClick={() => updateTaskStatus(selectedTask.id, runningStatus.id)} 
+                            className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-emerald-200"
+                          >
+                            Iniciar Tarefa
+                          </button>
+                        )}
+                        {currentStatus?.order === 2 && finalStatus && (
+                          <button 
+                            type="button"
+                            onClick={() => updateTaskStatus(selectedTask.id, finalStatus.id)} 
+                            className="flex-1 py-4 bg-brand text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-brand/20"
+                          >
+                            Finalizar Tarefa
+                          </button>
+                        )}
                       </>
                     )}
                   </>

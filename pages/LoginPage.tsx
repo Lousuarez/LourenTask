@@ -32,7 +32,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       } else if (!user.active) {
         setError('Acesso negado: conta inativa.');
       } else {
-        // Mapeia permissions do grupo se existir
         const permissions = (user.group as any)?.permissions || [];
         onLogin(user, permissions);
       }
@@ -51,7 +50,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
              <Zap size={44} fill="currentColor" />
           </div>
           <h1 className="text-4xl font-black text-white tracking-tighter">
-            Louren<span className="text-brand">Task</span>
+            Task<span className="text-brand">S</span>
           </h1>
         </div>
 

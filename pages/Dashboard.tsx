@@ -115,7 +115,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     try {
       const dataUrl = await toPng(dashboardRef.current, { backgroundColor: '#f8fafc', style: { padding: '24px' } });
       const link = document.createElement('a');
-      link.download = `Relatorio-LT-${new Date().getTime()}.png`;
+      link.download = `Relatorio-TaskS-${new Date().getTime()}.png`;
       link.href = dataUrl;
       link.click();
     } finally { setExporting(false); }

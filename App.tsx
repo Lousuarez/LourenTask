@@ -22,15 +22,12 @@ const App: React.FC = () => {
   };
 
   const determineAndApplyTheme = async (user: User) => {
-    // Corrected company_ids (line 25)
     if (user.company_ids && user.company_ids.length > 1) {
       applyCompanyTheme('#FF3D03');
-    // Corrected company_ids (line 27)
     } else if (user.company_ids && user.company_ids.length === 1) {
       const { data: company } = await supabase
         .from('companies')
         .select('primary_color')
-        // Corrected company_ids (line 31)
         .eq('id', user.company_ids[0])
         .single();
       applyCompanyTheme(company?.primary_color);
@@ -38,7 +35,6 @@ const App: React.FC = () => {
       const { data: company } = await supabase
         .from('companies')
         .select('primary_color')
-        // Corrected company_id (line 38)
         .eq('id', user.company_id)
         .single();
       applyCompanyTheme(company?.primary_color);
@@ -87,7 +83,7 @@ const App: React.FC = () => {
 
   if (loading) return (
     <div className="flex h-screen items-center justify-center bg-slate-900">
-      <div className="text-[#FF3D03] font-black text-xl animate-pulse">CARREGANDO LOURENTASK...</div>
+      <div className="text-[#FF3D03] font-black text-xl animate-pulse">CARREGANDO TASKS...</div>
     </div>
   );
 

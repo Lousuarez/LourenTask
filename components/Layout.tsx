@@ -61,7 +61,7 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
                <Zap size={22} fill="currentColor" />
             </div>
             <span className="text-xl font-black tracking-tighter text-white">
-              Louren<span className="text-brand">Task</span>
+              Task<span className="text-brand">S</span>
             </span>
             <button className="lg:hidden ml-auto text-slate-400" onClick={() => setSidebarOpen(false)}><X size={20}/></button>
           </div>

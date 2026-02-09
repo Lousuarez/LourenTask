@@ -1,5 +1,5 @@
 {
-  "name": "LourenTask - Sistema de Gestão de Demandas | V1",
-  "description": "Uma plataforma completa para controle de tarefas, com autenticação, permissões por grupo, dashboard interativo e gestão de status em tempo real.",
+  "name": "TaskS - Sistema de Gestão de Demandas | V1",
+  "description": "Uma plataforma completa para controle de tarefas (Task System), com autenticação, permissões por grupo, dashboard interativo e gestão de status em tempo real.",
   "requestFramePermissions": []
 }
