@@ -100,6 +100,7 @@ const App: React.FC = () => {
           <Route path="/tarefas/nova" element={canAccess(MenuKey.TASKS_CREATE) ? <TaskForm user={currentUser} /> : <Navigate to="/tarefas" />} />
           <Route path="/tarefas/editar/:id" element={canAccess(MenuKey.TASKS_EDIT) ? <TaskForm user={currentUser} /> : <Navigate to="/tarefas" />} />
           <Route path="/cadastros/tipos" element={canAccess(MenuKey.CONFIG_TASK_TYPE) ? <CRUDPage entity="taskTypes" user={currentUser} /> : <Navigate to="/" />} />
+          <Route path="/cadastros/etiquetas" element={canAccess(MenuKey.CONFIG_TAG) ? <CRUDPage entity="tags" user={currentUser} /> : <Navigate to="/" />} />
           <Route path="/cadastros/setores" element={canAccess(MenuKey.CONFIG_SECTOR) ? <CRUDPage entity="sectors" user={currentUser} /> : <Navigate to="/" />} />
           <Route path="/cadastros/criticidades" element={canAccess(MenuKey.CONFIG_CRITICALITY) ? <CRUDPage entity="criticalities" user={currentUser} /> : <Navigate to="/" />} />
           <Route path="/cadastros/metodos" element={canAccess(MenuKey.CONFIG_ENTRY_METHOD) ? <CRUDPage entity="entryMethods" user={currentUser} /> : <Navigate to="/" />} />

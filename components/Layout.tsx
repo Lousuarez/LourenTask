@@ -37,7 +37,8 @@ const Layout: React.FC<LayoutProps> = ({ user, permissions, onLogout, children }
 
   const adminItems = [
     { key: MenuKey.CONFIG_COMPANY, label: 'Empresas', icon: Building2, path: '/cadastros/empresas' },
-    { key: MenuKey.CONFIG_TASK_TYPE, label: 'Tipo de Tarefa', icon: Tag, path: '/cadastros/tipos' },
+    { key: MenuKey.CONFIG_TAG, label: 'Etiquetas', icon: Tag, path: '/cadastros/etiquetas' },
+    { key: MenuKey.CONFIG_TASK_TYPE, label: 'Tipo de Tarefa', icon: Layers, path: '/cadastros/tipos' },
     { key: MenuKey.CONFIG_SECTOR, label: 'Setor', icon: Building2, path: '/cadastros/setores' },
     { key: MenuKey.CONFIG_CRITICALITY, label: 'Criticidade', icon: AlertTriangle, path: '/cadastros/criticidades' },
     { key: MenuKey.CONFIG_ENTRY_METHOD, label: 'Método de Entrada', icon: LogIn, path: '/cadastros/metodos' },

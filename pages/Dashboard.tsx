@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, 
-  CartesianGrid, Tooltip, Legend
+  CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
 interface DashboardProps {
@@ -30,21 +30,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [chartWidth, setChartWidth] = useState(0);
-
-  // Monitorar o tamanho do container para o gráfico não quebrar
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const updateWidth = () => {
-      if (containerRef.current) {
-        setChartWidth(containerRef.current.offsetWidth - 80);
-      }
-    };
-    window.addEventListener('resize', updateWidth);
-    updateWidth();
-    return () => window.removeEventListener('resize', updateWidth);
-  }, [loading]);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -62,6 +48,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setStatuses(s || []);
       setSectors(sec || []);
       setLoading(false);
+      
+      // Delay to ensure DOM layout is calculated
+      setTimeout(() => setIsReady(true), 150);
     };
     fetchData();
   }, [user]);
@@ -137,29 +126,37 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div ref={containerRef} className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm flex flex-col items-center">
+          <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm flex flex-col items-center overflow-hidden min-h-[450px]">
             <h3 className="text-sm font-black uppercase mb-8 text-slate-800 self-start">Saúde de Conclusão</h3>
-            <div style={{ width: chartWidth > 0 ? chartWidth : '100%', height: 350 }}>
-              <PieChart width={chartWidth || 400} height={350}>
-                <Pie data={concludedChartData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={8} dataKey="value" stroke="none">
-                  {concludedChartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                </Pie>
-                <Tooltip />
-                <Legend verticalAlign="bottom" height={36} />
-              </PieChart>
+            <div className="w-full h-[350px]">
+              {isReady && (
+                <ResponsiveContainer width="100%" height="100%" debounce={100}>
+                  <PieChart>
+                    <Pie data={concludedChartData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={8} dataKey="value" stroke="none">
+                      {concludedChartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip />
+                    <Legend verticalAlign="bottom" height={36} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
-          <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm">
+          <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm overflow-hidden min-h-[450px]">
             <h3 className="text-sm font-black uppercase mb-8 text-slate-800">Demandas por Setor</h3>
-            <div style={{ width: '100%', height: 350 }}>
-              <BarChart width={chartWidth || 500} height={350} data={sectorChartData} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 9, fontWeight: '900', textTransform: 'uppercase' }} />
-                <Tooltip cursor={{ fill: 'transparent' }} />
-                <Bar dataKey="value" fill="#FF3D03" radius={[0, 8, 8, 0]} barSize={24} />
-              </BarChart>
+            <div className="w-full h-[350px]">
+              {isReady && (
+                <ResponsiveContainer width="100%" height="100%" debounce={100}>
+                  <BarChart data={sectorChartData} layout="vertical" margin={{ left: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 9, fontWeight: '900', textTransform: 'uppercase' }} />
+                    <Tooltip cursor={{ fill: 'transparent' }} />
+                    <Bar dataKey="value" fill="#FF3D03" radius={[0, 8, 8, 0]} barSize={24} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>

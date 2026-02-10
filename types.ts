@@ -11,7 +11,8 @@ export enum MenuKey {
   CONFIG_USERS = 'CONFIG_USERS',
   CONFIG_GROUPS = 'CONFIG_GROUPS',
   CONFIG_STATUS = 'CONFIG_STATUS',
-  CONFIG_COMPANY = 'CONFIG_COMPANY'
+  CONFIG_COMPANY = 'CONFIG_COMPANY',
+  CONFIG_TAG = 'CONFIG_TAG'
 }
 
 export enum VisibilityScope {
@@ -93,6 +94,15 @@ export interface TaskStatus {
   company_ids?: string[];
 }
 
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  active: boolean;
+  company_id: string;
+  company_ids?: string[];
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -102,6 +112,7 @@ export interface Task {
   sector_id: string;
   entry_method_id: string;
   task_type_id: string;
+  tag_id?: string;
   solicitor?: string;
   observations: string;
   status_id: string;
