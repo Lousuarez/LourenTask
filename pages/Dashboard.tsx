@@ -1,13 +1,12 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../db';
 import { User, Task, TaskStatus, Sector } from '../types';
-// Fixed missing imports for Timer and Activity icons
 import { 
-  ClipboardList, Clock, AlertCircle, CheckCircle, 
-  Layers, Loader2, Target, Calendar, 
-  ArrowUpRight, History, PlayCircle, Timer, Activity
+  ClipboardList, CheckCircle, 
+  Layers, Loader2, Calendar, 
+  History, PlayCircle, Timer, Activity
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, 
@@ -71,7 +70,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     const totalDemandas = filteredTasks.length;
     const emAtrasoAtivas = activeTasks.filter(t => t.deadline < today).length;
     const vencemHoje = activeTasks.filter(t => t.deadline === today).length;
-    const noFluxo = activeTasks.filter(t => t.deadline > today).length;
+    const noFluxo = activeTasks.filter(t => t.deadline >= today).length;
     
     const concluidasNoPrazo = concludedTasks.filter(t => {
       if (!t.finished_at) return false;
@@ -106,16 +105,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const KPICard = ({ icon: Icon, label, value, subLabel, colorClass, bgClass, onClick }: any) => (
     <button 
       onClick={onClick}
-      className="bg-white p-5 rounded-[28px] border border-slate-100 shadow-sm flex items-center space-x-4 hover:shadow-md transition-all group flex-1 min-w-[180px]"
+      className="bg-white p-5 rounded-[28px] border border-slate-100 shadow-sm flex items-center space-x-4 hover:shadow-md transition-all group min-w-[200px] flex-1"
     >
       <div className={`w-12 h-12 rounded-2xl ${bgClass} flex items-center justify-center shrink-0`}>
         <Icon size={20} className={colorClass} />
       </div>
-      <div className="text-left overflow-hidden">
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-0.5 truncate">{label}</p>
+      <div className="text-left flex flex-col justify-center">
+        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-[1.1] mb-1 break-words">
+          {label}
+        </p>
         <div className="flex items-baseline gap-2">
           <span className="text-2xl font-black text-slate-900 leading-none">{value}</span>
-          <span className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter">{subLabel}</span>
+          <span className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter shrink-0">{subLabel}</span>
         </div>
       </div>
     </button>
@@ -130,7 +131,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   return (
     <div className="space-y-8 animate-in fade-in pb-20">
-      {/* Header Estilizado */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tighter uppercase leading-none">
@@ -163,8 +163,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Grid de Cards KPI - Exatamente como na imagem */}
-      <div className="flex flex-wrap gap-4">
+      {/* Grid de Cards KPI otimizado para evitar cortes */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <KPICard 
           icon={ClipboardList} 
           label="Total Demandas" 
@@ -221,33 +221,52 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         />
       </div>
 
-      {/* Gráficos Complementares */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-10">
-        <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm flex flex-col items-center min-h-[450px]">
-          <div className="w-full flex justify-between items-center mb-8">
+        <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm flex flex-col items-center min-h-[480px]">
+          <div className="w-full flex justify-between items-center mb-12">
             <h3 className="text-[11px] font-black uppercase text-slate-800 tracking-widest flex items-center gap-2">
               <Activity size={16} className="text-brand" /> Eficiência de Entrega
             </h3>
           </div>
-          <div className="w-full h-[320px]">
+          <div className="w-full h-[320px] flex items-center justify-center">
             {isReady && chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={chartData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={8} dataKey="value" stroke="none">
+                  <Pie 
+                    data={chartData} 
+                    cx="50%" 
+                    cy="50%" 
+                    innerRadius={90} 
+                    outerRadius={130} 
+                    paddingAngle={8} 
+                    dataKey="value" 
+                    stroke="none"
+                  >
                     {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" iconType="circle" />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontWeight: '900', fontSize: '10px', textTransform: 'uppercase' }} 
+                  />
+                  <Legend 
+                    verticalAlign="bottom" 
+                    iconType="circle" 
+                    wrapperStyle={{ paddingTop: '30px', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-[10px] font-black text-slate-300 uppercase">Sem dados concluídos</div>
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-24 h-24 rounded-full border-4 border-slate-100 flex items-center justify-center text-slate-200">
+                  <CheckCircle size={32} />
+                </div>
+                <div className="text-[10px] font-black text-slate-300 uppercase">Sem dados concluídos</div>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm min-h-[450px]">
-          <div className="w-full flex justify-between items-center mb-8">
+        <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm min-h-[480px]">
+          <div className="w-full flex justify-between items-center mb-12">
             <h3 className="text-[11px] font-black uppercase text-slate-800 tracking-widest flex items-center gap-2">
               <Layers size={16} className="text-brand" /> Demandas por Setor
             </h3>
@@ -255,7 +274,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           <div className="w-full h-[320px]">
             {isReady && sectorChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sectorChartData} layout="vertical" margin={{ left: 20 }}>
+                <BarChart 
+                  data={sectorChartData} 
+                  layout="vertical" 
+                  margin={{ left: 20, right: 30 }}
+                  barCategoryGap={20}
+                >
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                   <XAxis type="number" hide />
                   <YAxis 
@@ -263,15 +287,35 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     type="category" 
                     axisLine={false} 
                     tickLine={false} 
-                    width={100} 
+                    width={120} 
                     tick={{ fontSize: 9, fontWeight: '900', textTransform: 'uppercase', fill: '#94a3b8' }} 
                   />
-                  <Tooltip cursor={{ fill: '#f8fafc' }} />
-                  <Bar dataKey="value" fill="#FF3D03" radius={[0, 8, 8, 0]} barSize={20} />
+                  <Tooltip 
+                    cursor={{ fill: '#f8fafc' }} 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontWeight: '900', fontSize: '10px', textTransform: 'uppercase' }}
+                  />
+                  <Bar 
+                    dataKey="value" 
+                    fill="#FF3D03" 
+                    radius={[0, 10, 10, 0]} 
+                    barSize={24}
+                    label={{ position: 'right', fontSize: 10, fontWeight: '900', fill: '#FF3D03', offset: 10 }}
+                  >
+                    {sectorChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fillOpacity={1 - (index * 0.15)} fill="#FF3D03" />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-[10px] font-black text-slate-300 uppercase">Sem dados por setor</div>
+              <div className="h-full flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-24 h-24 rounded-full border-4 border-slate-100 flex items-center justify-center text-slate-200">
+                    <Layers size={32} />
+                  </div>
+                  <div className="text-[10px] font-black text-slate-300 uppercase">Sem dados por setor</div>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -280,7 +324,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   );
 };
 
-// Ícones auxiliares não importados diretamente
 const ShieldAlert = (props: any) => (
   <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
 );
