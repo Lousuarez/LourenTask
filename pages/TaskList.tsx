@@ -19,6 +19,7 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
   const navigate = useNavigate();
   
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all');
+  const [tagFilter, setTagFilter] = useState(searchParams.get('tag') || 'all');
   const [searchTerm, setSearchTerm] = useState(searchParams.get('q') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
   
@@ -106,6 +107,10 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
         }
       }
 
+      if (tagFilter !== 'all') {
+        query = query.eq('tag_id', tagFilter);
+      }
+
       if (debouncedSearch) {
         query = query.or(`title.ilike.%${debouncedSearch}%,solicitor.ilike.%${debouncedSearch}%`);
       }
@@ -125,13 +130,13 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
 
       setTasks(processedTasks);
       setTotalCount(count || 0);
-      setSearchParams({ status: statusFilter, q: debouncedSearch, page: String(currentPage) });
+      setSearchParams({ status: statusFilter, tag: tagFilter, q: debouncedSearch, page: String(currentPage) });
     } catch (err) { 
       console.error(err); 
     } finally { 
       setLoading(false); 
     }
-  }, [user, statusFilter, debouncedSearch, currentPage, statuses, setSearchParams]);
+  }, [user, statusFilter, tagFilter, debouncedSearch, currentPage, statuses, setSearchParams]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
@@ -219,7 +224,6 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
 
   const renderTagBadge = (task: Task) => {
     const tag = tags.find(t => t.id === task.tag_id);
-    const isWorking = actionLoading === task.id;
 
     return (
       <div className="relative">
@@ -305,8 +309,8 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
           <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Painel de <span className="text-brand">Demandas</span></h2>
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{totalCount} registros</p>
         </div>
-        <div className="flex flex-col md:flex-row gap-4 flex-1 max-w-4xl">
-          <div className="relative md:w-72">
+        <div className="flex flex-col md:flex-row gap-4 flex-1 max-w-5xl">
+          <div className="relative md:w-56">
             <Filter className="absolute left-4 top-3.5 text-slate-400" size={18} />
             <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }} className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 text-sm appearance-none">
               <option value="all">Todas as Situações</option>
@@ -321,6 +325,17 @@ const TaskList: React.FC<TaskListProps> = ({ user }) => {
               </optgroup>
             </select>
           </div>
+
+          <div className="relative md:w-56">
+            <TagIcon className="absolute left-4 top-3.5 text-slate-400" size={18} />
+            <select value={tagFilter} onChange={e => { setTagFilter(e.target.value); setCurrentPage(1); }} className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 text-sm appearance-none">
+              <option value="all">Todas Etiquetas</option>
+              {tags.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="relative flex-1">
             <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
             <input type="text" placeholder="Pesquisar..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }} className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:bg-white transition-all shadow-sm" />
